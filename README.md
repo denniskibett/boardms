@@ -1,8 +1,5 @@
-# TailAdmin Next.js - Free Next.js Tailwind Admin Dashboard Template
 
 TailAdmin is a free and open-source admin dashboard template built on **Next.js and Tailwind CSS** providing developers with everything they need to create a feature-rich and data-driven: back-end, dashboard, or admin panel solution for any sort of web project.
-
-![TailAdmin - Next.js Dashboard Preview](./banner.png)
 
 With TailAdmin Next.js, you get access to all the necessary dashboard UI components, elements, and pages required to build a high-quality and complete dashboard or admin panel. Whether you're building a dashboard or admin panel for a complex web application or a simple website. 
 
@@ -78,25 +75,6 @@ TailAdmin is a pre-designed starting point for building a web-based dashboard us
 
 All components are built with React and styled using Tailwind CSS for easy customization.
 
-## Feature Comparison
-
-### Free Version
-- 1 Unique Dashboard
-- 30+ dashboard components
-- 50+ UI elements
-- Basic Figma design files
-- Community support
-
-### Pro Version
-- 5 Unique Dashboards: Analytics, Ecommerce, Marketing, CRM, Stocks (more coming soon)
-- 400+ dashboard components and UI elements
-- Complete Figma design file
-- Email support
-
-To learn more about pro version features and pricing, visit our [pricing page](https://tailadmin.com/pricing).
-
-## Changelog
-
 ### Version 2.0.2 - [March 25, 2025]
 
 - Upgraded to Next v15.2.3 for [CVE-2025-29927](https://nextjs.org/blog/cve-2025-29927) concerns
@@ -111,17 +89,11 @@ To learn more about pro version features and pricing, visit our [pricing page](h
 - Updated class usage to match the latest syntax and features.
 - Replaced deprecated class and optimized styles.
 
-#### Next Steps
-
-- Run npm install or yarn install to update dependencies.
-- Check for any style changes or compatibility issues.
-- Refer to the Tailwind CSS v4 [Migration Guide](https://tailwindcss.com/docs/upgrade-guide) on this release. if needed.
-- This update keeps the project up to date with the latest Tailwind improvements. 🚀
-
 ### v2.0.0 (February 2025)
 A major update focused on Next.js 15 implementation and comprehensive redesign.
 
 #### Major Improvements
+
 - Complete redesign using Next.js 15 App Router and React Server Components
 - Enhanced user interface with Next.js-optimized components
 - Improved responsiveness and accessibility
@@ -135,9 +107,9 @@ A major update focused on Next.js 15 implementation and comprehensive redesign.
 - Chart components now use ApexCharts for React
 - Authentication flow updated to use Server Actions and middleware
 
-[Read more](https://tailadmin.com/docs/update-logs/nextjs) on this release.
 
 #### Breaking Changes
+
 - Migrated from Next.js 14 to Next.js 15
 - Chart components now use ApexCharts for React
 - Authentication flow updated to use Server Actions and middleware
@@ -167,7 +139,3 @@ A major update focused on Next.js 15 implementation and comprehensive redesign.
 ## License
 
 TailAdmin Next.js Free Version is released under the MIT License.
-
-## Support
-
-If you find this project helpful, please consider giving it a star on GitHub. Your support helps us continue developing and maintaining this template.
