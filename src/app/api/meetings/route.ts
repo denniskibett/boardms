@@ -1,0 +1,244 @@
+// app/api/meetings/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { query } from '@/lib/db';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const date = searchParams.get('date');
+    const type = searchParams.get('type');
+
+    const whereConditions: string[] = [];
+    const params: any[] = [];
+    let paramCount = 0;
+
+    if (date) {
+      paramCount++;
+      whereConditions.push(`DATE(m.start_at) = $${paramCount}`);
+      params.push(date);
+    }
+
+    if (type) {
+      paramCount++;
+      whereConditions.push(`m.type = $${paramCount}`);
+      params.push(type);
+    }
+
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(' AND ')}`
+        : '';
+
+    console.log('Fetching meetings with query...', whereClause, params);
+
+    const meetings = await query(
+      `
+      SELECT 
+        m.id,
+        m.name,
+        m.type,
+        m.start_at,
+        m.period,
+        m.actual_end,
+        m.location,
+        m.chair_id,
+        m.status,
+        m.created_at,
+        m.updated_at,
+        m.approved_by,
+        m.created_by,
+        m.description,
+        m.colour,
+        chair.name AS chair_name,
+        chair.email AS chair_email,
+        created_by_user.name AS created_by_name,
+        approved_by_user.name AS approved_by_name,
+        COUNT(mp.user_id) AS attendees_count
+      FROM meetings m
+      LEFT JOIN users chair ON m.chair_id = chair.id
+      LEFT JOIN users created_by_user ON m.created_by = created_by_user.id
+      LEFT JOIN users approved_by_user ON m.approved_by = approved_by_user.id
+      LEFT JOIN meeting_participants mp ON m.id = mp.meeting_id
+      ${whereClause}
+      GROUP BY 
+        m.id, m.name, m.type, m.start_at, m.location, m.chair_id, m.status,
+        m.created_at, m.updated_at, m.approved_by, m.created_by, m.description,
+        m.period, m.actual_end, m.colour,
+        chair.name, chair.email, created_by_user.name, approved_by_user.name
+      ORDER BY m.start_at DESC
+      `,
+      params
+    );
+
+    console.log(`✅ Found ${meetings.rows.length} meetings`);
+    return NextResponse.json(meetings.rows || []);
+  } catch (error) {
+    console.error('❌ Error fetching meetings:', error);
+    return NextResponse.json([], { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const meetingData = await request.json();
+    
+    console.log('📝 Creating new meeting:', meetingData);
+
+    // Validate required fields
+    if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
+      return NextResponse.json(
+        { error: 'Missing required fields: name, type, start_at, location, status' },
+        { status: 400 }
+      );
+    }
+
+    // Insert the new meeting
+    const result = await query(
+      `
+      INSERT INTO meetings (
+        name, 
+        type, 
+        start_at, 
+        period, 
+        actual_end,
+        location, 
+        chair_id, 
+        status, 
+        description, 
+        colour,
+        created_by,
+        approved_by,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      RETURNING *
+      `,
+      [
+        meetingData.name,
+        meetingData.type,
+        meetingData.start_at,
+        meetingData.period || '60',
+        meetingData.actual_end || null,
+        meetingData.location,
+        meetingData.chair_id || null,
+        meetingData.status,
+        meetingData.description || '',
+        meetingData.colour || '#3b82f6',
+        meetingData.created_by || 'system',
+        meetingData.approved_by || null
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Failed to create meeting');
+    }
+
+    const newMeeting = result.rows[0];
+    console.log('✅ Meeting created successfully:', newMeeting.id);
+
+    return NextResponse.json(newMeeting, { status: 201 });
+
+  } catch (error) {
+    console.error('❌ Error creating meeting:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to create meeting',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Meeting ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const meetingData = await request.json();
+    
+    console.log('📝 Updating meeting:', { id, ...meetingData });
+
+    // Validate required fields
+    if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
+      return NextResponse.json(
+        { error: 'Missing required fields: name, type, start_at, location, status' },
+        { status: 400 }
+      );
+    }
+
+    // Check if meeting exists
+    const existingMeeting = await query(
+      'SELECT id FROM meetings WHERE id = $1',
+      [id]
+    );
+
+    if (existingMeeting.rows.length === 0) {
+      return NextResponse.json(
+        { error: 'Meeting not found' },
+        { status: 404 }
+      );
+    }
+
+    // Update the meeting
+    const result = await query(
+      `
+      UPDATE meetings SET
+        name = $1,
+        type = $2,
+        start_at = $3,
+        period = $4,
+        actual_end = $5,
+        location = $6,
+        chair_id = $7,
+        status = $8,
+        description = $9,
+        colour = $10,
+        approved_by = $11,
+        updated_at = NOW()
+      WHERE id = $12
+      RETURNING *
+      `,
+      [
+        meetingData.name,
+        meetingData.type,
+        meetingData.start_at,
+        meetingData.period || '60',
+        meetingData.actual_end || null,
+        meetingData.location,
+        meetingData.chair_id || null,
+        meetingData.status,
+        meetingData.description || '',
+        meetingData.colour || '#3b82f6',
+        meetingData.approved_by || null,
+        id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Failed to update meeting');
+    }
+
+    const updatedMeeting = result.rows[0];
+    console.log('✅ Meeting updated successfully:', updatedMeeting.id);
+
+    return NextResponse.json(updatedMeeting);
+
+  } catch (error) {
+    console.error('❌ Error updating meeting:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to update meeting',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 
+      { status: 500 }
+    );
+  }
+}
