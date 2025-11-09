@@ -1,12 +1,11 @@
-// app/meetings/[id]/page.tsx
 import SingleMeeting from '@/components/meetings/SingleMeeting';
 
 interface PageProps {
-  params: {
-    id: string;
-  };
+  params: Promise<{ id: string }>;
 }
 
-export default function MeetingPage({ params }: PageProps) {
-  return <SingleMeeting meetingId={params.id} />;
+export default async function MeetingPage({ params }: PageProps) {
+  // ✅ FIX: Await params for Next.js 13+
+  const { id } = await params;
+  return <SingleMeeting meetingId={id} />;
 }

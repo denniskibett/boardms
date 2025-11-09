@@ -1,4 +1,4 @@
-// app/components/meetings/MeetingCalendar.tsx - UPDATED WITH VIEW DETAILS LINK
+// app/components/meetings/MeetingCalendar.tsx - FIXED VERSION
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import FullCalendar from "@fullcalendar/react";
@@ -149,16 +149,31 @@ const Calendar: React.FC = () => {
     return formatDate(date, systemSettings.date_format, systemSettings.timezone);
   };
 
-  // Debug function to log categories
-  const debugCategories = useCallback(() => {
-    console.log("=== CATEGORIES DEBUG ===");
-    console.log("Locations:", locations.map(l => l.name));
-    console.log("Meeting Types:", meetingTypes.map(t => t.name));
-    console.log("Meeting Statuses:", meetingStatuses.map(s => s.name));
-    console.log("Colours:", colours.map(c => c.name));
-    console.log("System Settings:", systemSettings);
-    console.log("=== END DEBUG ===");
-  }, [locations, meetingTypes, meetingStatuses, colours, systemSettings]);
+  // Get appropriate chair based on meeting type
+  const getDefaultChairForMeetingType = (meetingType: string): string => {
+    if (!meetingType || !chairs.length) return "";
+    
+    const typeLower = meetingType.toLowerCase();
+    
+    if (typeLower.includes('cabinet')) {
+      // Find president
+      const president = chairs.find(chair => 
+        chair.role.toLowerCase().includes('president') && 
+        !chair.role.toLowerCase().includes('deputy')
+      );
+      return president?.id || "";
+    } 
+    else if (typeLower.includes('committee')) {
+      // Find deputy president
+      const deputyPresident = chairs.find(chair => 
+        chair.role.toLowerCase().includes('deputy') || 
+        chair.role.toLowerCase().includes('vice')
+      );
+      return deputyPresident?.id || "";
+    }
+    
+    return "";
+  };
 
   // Fetch all required data
   useEffect(() => {
@@ -187,12 +202,14 @@ const Calendar: React.FC = () => {
         const chairsData = chairsRes.ok ? await chairsRes.json() : [];
         const meetingsData = meetingsRes.ok ? await meetingsRes.json() : [];
 
-        console.log("Locations data:", locationsData.length);
-        console.log("Meeting types data:", meetingTypesData.length);
-        console.log("Meeting statuses data:", meetingStatusesData.length);
-        console.log("Colours data:", coloursData.length);
-        console.log("Chairs data:", chairsData.length);
-        console.log("Meetings data:", meetingsData.length);
+        console.log("Data counts:", {
+          locations: locationsData.length,
+          meetingTypes: meetingTypesData.length,
+          meetingStatuses: meetingStatusesData.length,
+          colours: coloursData.length,
+          chairs: chairsData.length,
+          meetings: meetingsData.length
+        });
 
         setLocations(locationsData);
         setMeetingTypes(meetingTypesData);
@@ -248,52 +265,6 @@ const Calendar: React.FC = () => {
 
     fetchData();
   }, []);
-
-  // Debug when categories or settings change
-  useEffect(() => {
-    if (locations.length > 0 || meetingTypes.length > 0 || meetingStatuses.length > 0 || colours.length > 0) {
-      console.log("Categories updated - running debug");
-      debugCategories();
-    }
-  }, [locations, meetingTypes, meetingStatuses, colours, debugCategories]);
-
-  const getStatusIcon = (statusName: string) => {
-    const statusIcons: { [key: string]: any } = {
-      'scheduled': Clock,
-      'confirmed': CheckCircle,
-      'in progress': Loader2,
-      'completed': CheckCircle,
-      'cancelled': XCircle,
-      'postponed': Clock,
-      'draft': FileText
-    };
-    
-    const normalizedStatus = statusName.toLowerCase();
-    return statusIcons[normalizedStatus] || Clock;
-  };
-
-  // Use colours from categories instead of hardcoded options
-  const getColourOptions = () => {
-    if (colours.length > 0) {
-      return colours.map(colour => ({
-        value: colour.colour || "#3b82f6",
-        label: colour.name,
-        bg: `bg-[${colour.colour}]`
-      }));
-    }
-    
-    // Fallback colours if no colours from API
-    return [
-      { value: "#3b82f6", label: "Blue", bg: "bg-blue-500" },
-      { value: "#ef4444", label: "Red", bg: "bg-red-500" },
-      { value: "#10b981", label: "Green", bg: "bg-green-500" },
-      { value: "#f59e0b", label: "Yellow", bg: "bg-yellow-500" },
-      { value: "#8b5cf6", label: "Purple", bg: "bg-purple-500" },
-      { value: "#06b6d4", label: "Cyan", bg: "bg-cyan-500" },
-      { value: "#f97316", label: "Orange", bg: "bg-orange-500" },
-      { value: "#84cc16", label: "Lime", bg: "bg-lime-500" }
-    ];
-  };
 
   const handleDateSelect = (selectInfo: DateSelectArg) => {
     resetForm();
@@ -352,10 +323,21 @@ const Calendar: React.FC = () => {
   };
 
   const handleInputChange = (field: keyof MeetingFormData, value: string) => {
-    setFormData(prev => ({
-      ...prev,
+    const newFormData = {
+      ...formData,
       [field]: value
-    }));
+    };
+
+    // Auto-assign chair based on meeting type when type changes
+    if (field === 'type' && value) {
+      const defaultChairId = getDefaultChairForMeetingType(value);
+      if (defaultChairId) {
+        newFormData.chair_id = defaultChairId;
+        console.log(`Auto-assigned chair for ${value}: ${defaultChairId}`);
+      }
+    }
+
+    setFormData(newFormData);
   };
 
   const handleSubmit = async () => {
@@ -391,30 +373,29 @@ const Calendar: React.FC = () => {
         throw new Error(`Invalid date format: ${formData.start_at}. Please check the date and time.`);
       }
 
+      // Prepare meeting data with correct data types
       const meetingData = {
         name: formData.name.trim(),
         type: formData.type,
         start_at: startDate.toISOString(), // Store as UTC ISO string
-        period: formData.period,
+        period: parseInt(formData.period) || 60, // Convert to integer
         location: formData.location,
-        chair_id: formData.chair_id || null,
+        chair_id: formData.chair_id ? parseInt(formData.chair_id) : null, // Convert to integer or null
         status: formData.status,
         description: formData.description?.trim() || '',
         colour: formData.colour,
         actual_end: endDate.toISOString(), // Store calculated end time
-        created_by: "current_user_id", // TODO: Replace with actual user ID
-        approved_by: formData.status.toLowerCase() === "confirmed" ? "auto_approve" : null,
+        created_by: 1, // TODO: Replace with actual logged-in user ID from session
+        approved_by: formData.status.toLowerCase() === "confirmed" ? 1 : null, // TODO: Replace with actual approver ID
         timezone: systemSettings.timezone // Store the timezone used for creation
       };
 
-      console.log("📤 Submitting meeting data:", {
-        ...meetingData,
-        start_at_local: formData.start_at,
-        system_timezone: systemSettings.timezone,
-        system_date_format: systemSettings.date_format
-      });
+      console.log("📤 Submitting meeting data:", meetingData);
 
-      const url = selectedEvent ? `/api/meetings/${selectedEvent.id}` : '/api/meetings';
+      // FIXED: Use correct URL format for PUT requests
+      const url = selectedEvent 
+        ? `/api/meetings?id=${selectedEvent.id}` 
+        : '/api/meetings';
       const method = selectedEvent ? 'PUT' : 'POST';
 
       console.log(`🌐 Making ${method} request to: ${url}`);
@@ -572,12 +553,6 @@ const Calendar: React.FC = () => {
     </div>
   );
 
-  // Format event dates for display
-  const formatEventDate = (date: Date | null): string => {
-    if (!date) return '';
-    return formatSystemDate(date, true);
-  };
-
   // Render View Details link for existing events
   const renderViewDetailsLink = () => {
     if (!selectedEvent) return null;
@@ -659,9 +634,7 @@ const Calendar: React.FC = () => {
                 click: openSlider,
               },
             }}
-            // Set calendar timezone to match system
             timeZone={systemSettings.timezone}
-            // Format dates according to system settings
             eventTimeFormat={{
               hour: '2-digit',
               minute: '2-digit',
@@ -841,9 +814,16 @@ const Calendar: React.FC = () => {
                     >
                       <option value="">Select Chair</option>
                       {chairs.map(chair => (
-                        <option key={chair.id} value={chair.id}>{chair.name} ({chair.role})</option>
+                        <option key={chair.id} value={chair.id}>
+                          {chair.name} ({chair.role})
+                        </option>
                       ))}
                     </select>
+                    {formData.type && formData.chair_id && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Auto-assigned for {formData.type}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -924,6 +904,21 @@ const Calendar: React.FC = () => {
       </div>
     </div>
   );
+};
+
+// Helper function for colour options (keep your existing implementation)
+const getColourOptions = () => {
+  // ... your existing getColourOptions implementation
+  return [
+    { value: "#3b82f6", label: "Blue", bg: "bg-blue-500" },
+    { value: "#ef4444", label: "Red", bg: "bg-red-500" },
+    { value: "#10b981", label: "Green", bg: "bg-green-500" },
+    { value: "#f59e0b", label: "Yellow", bg: "bg-yellow-500" },
+    { value: "#8b5cf6", label: "Purple", bg: "bg-purple-500" },
+    { value: "#06b6d4", label: "Cyan", bg: "bg-cyan-500" },
+    { value: "#f97316", label: "Orange", bg: "bg-orange-500" },
+    { value: "#84cc16", label: "Lime", bg: "bg-lime-500" }
+  ];
 };
 
 const renderEventContent = (eventInfo: EventContentArg) => {

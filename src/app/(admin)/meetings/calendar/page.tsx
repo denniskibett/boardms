@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import MeetingCalendar from "@/components/meetings/MeetingCalendar";
 import UpcomingMeetings from "@/components/meetings/UpcomingMeetings";
+import TodayMeetings from "@/components/meetings/TodayMeetings";
 
 export const metadata: Metadata = {
   title: "Meeting Calendar | E-Cabinet System",

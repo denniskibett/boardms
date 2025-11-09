@@ -80,71 +80,67 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const meetingData = await request.json();
+    const body = await request.json();
     
-    console.log('📝 Creating new meeting:', meetingData);
-
     // Validate required fields
-    if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
+    if (!body.meeting_id) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, type, start_at, location, status' },
+        { error: 'Meeting ID is required' },
         { status: 400 }
       );
     }
 
-    // Insert the new meeting
-    const result = await query(
-      `
-      INSERT INTO meetings (
-        name, 
-        type, 
-        start_at, 
-        period, 
-        actual_end,
-        location, 
-        chair_id, 
-        status, 
-        description, 
-        colour,
-        created_by,
-        approved_by,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
-      RETURNING *
-      `,
-      [
-        meetingData.name,
-        meetingData.type,
-        meetingData.start_at,
-        meetingData.period || '60',
-        meetingData.actual_end || null,
-        meetingData.location,
-        meetingData.chair_id || null,
-        meetingData.status,
-        meetingData.description || '',
-        meetingData.colour || '#3b82f6',
-        meetingData.created_by || 'system',
-        meetingData.approved_by || null
-      ]
-    );
-
-    if (result.rows.length === 0) {
-      throw new Error('Failed to create meeting');
+    if (!body.name || body.name.trim() === '') {
+      return NextResponse.json(
+        { error: 'Agenda name is required' },
+        { status: 400 }
+      );
     }
 
-    const newMeeting = result.rows[0];
-    console.log('✅ Meeting created successfully:', newMeeting.id);
+    // Ensure data types are correct
+    const meetingId = Number(body.meeting_id);
+    const name = String(body.name).trim();
+    
+    if (isNaN(meetingId)) {
+      return NextResponse.json(
+        { error: 'Invalid meeting ID' },
+        { status: 400 }
+      );
+    }
 
-    return NextResponse.json(newMeeting, { status: 201 });
+    // Calculate next sort order
+    let sort_order = Number(body.sort_order) || 0;
+    if (!sort_order) {
+      const lastAgenda = await prisma.agenda.findFirst({
+        where: { meeting_id: meetingId },
+        orderBy: { sort_order: 'desc' }
+      });
+      sort_order = lastAgenda ? lastAgenda.sort_order + 1 : 1;
+    }
+    
+    const agenda = await prisma.agenda.create({
+      data: {
+        meeting_id: meetingId,
+        name: name,
+        ministry_id: body.ministry_id ? Number(body.ministry_id) : null,
+        presenter_name: body.presenter_name ? String(body.presenter_name) : '',
+        sort_order: sort_order,
+        description: body.description ? String(body.description) : '',
+        status: body.status || 'draft',
+        cabinet_approval_required: Boolean(body.cabinet_approval_required),
+        created_by: body.created_by ? Number(body.created_by) : 1,
+      },
+      include: {
+        documents: true,
+        ministry: true,
+      }
+    });
 
+    return NextResponse.json(agenda);
   } catch (error) {
-    console.error('❌ Error creating meeting:', error);
+    console.error('Error creating agenda:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to create meeting',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }, 
+      { error: 'Failed to create agenda' },
       { status: 500 }
     );
   }

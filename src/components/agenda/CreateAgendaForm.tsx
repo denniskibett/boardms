@@ -1,144 +1,150 @@
+// app/components/agendas/CreateAgendaForm.tsx
 "use client";
 import React, { useState } from "react";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
+import { useRouter } from "next/navigation";
 
-const committees = [
-  { id: "infrastructure", name: "Infrastructure & Energy Committee" },
-  { id: "finance", name: "Budget & Finance Committee" },
-  { id: "social", name: "Social Services Committee" },
-  { id: "security", name: "Security & Administration Committee" },
-  { id: "cabinet", name: "Full Cabinet Meeting" },
+interface AgendaFormData {
+  name: string;
+  description: string;
+  status: "draft" | "published" | "finalized" | "pending" | "in_progress";
+  sort_order: number;
+  presenter_name: string;
+  ministry_id: string;
+  memo_id: string;
+  cabinet_approval_required: boolean;
+  meeting_id: string;
+}
+
+const ministries = [
+  { id: "ministry-env", name: "Ministry of Environment" },
+  { id: "ministry-transport", name: "Ministry of Transport" },
+  { id: "ministry-energy", name: "Ministry of Energy" },
+  { id: "ministry-finance", name: "Ministry of Finance" },
+  { id: "ministry-health", name: "Ministry of Health" },
+  { id: "", name: "No Ministry (General)" },
 ];
 
-const agendaTypes = [
-  { id: "tier1", name: "Committee Agenda" },
-  { id: "tier2", name: "Cabinet Agenda" },
+const meetings = [
+  { id: "meeting-001", name: "Cabinet Meeting - January 2024", date: "2024-01-18" },
+  { id: "meeting-002", name: "Infrastructure Committee - January 2024", date: "2024-01-20" },
+  { id: "meeting-003", name: "Budget Review - Q1 2024", date: "2024-01-25" },
+];
+
+const statusOptions = [
+  { id: "draft", name: "Draft" },
+  { id: "pending", name: "Pending" },
+  { id: "in_progress", name: "In Progress" },
+  { id: "published", name: "Published" },
+  { id: "finalized", name: "Finalized" },
 ];
 
 export default function CreateAgendaForm() {
-  const [formData, setFormData] = useState({
-    title: "",
-    committee: "",
-    type: "tier1",
-    meetingDate: "",
-    description: "",
-    agendaItems: [] as Array<{
-      id: string;
-      title: string;
-      memoId: string;
-      presenter: string;
-      duration: number;
-      documents: File[];
-    }>,
-  });
+  const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<AgendaFormData>({
+    name: "",
+    description: "",
+    status: "draft",
+    sort_order: 1,
+    presenter_name: "",
+    ministry_id: "",
+    memo_id: "",
+    cabinet_approval_required: false,
+    meeting_id: "",
+  });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const addAgendaItem = () => {
-    setFormData(prev => ({
-      ...prev,
-      agendaItems: [
-        ...prev.agendaItems,
-        {
-          id: Date.now().toString(),
-          title: "",
-          memoId: "",
-          presenter: "",
-          duration: 15,
-          documents: [],
-        }
-      ]
-    }));
-  };
-
-  const updateAgendaItem = (index: number, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      agendaItems: prev.agendaItems.map((item, i) => 
-        i === index ? { ...item, [field]: value } : item
-      )
-    }));
-  };
-
-  const removeAgendaItem = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      agendaItems: prev.agendaItems.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleFileUpload = (index: number, files: FileList) => {
-    updateAgendaItem(index, "documents", Array.from(files));
+    const { name, value, type } = e.target;
+    
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else if (name === 'sort_order') {
+      setFormData(prev => ({ ...prev, [name]: parseInt(value) || 1 }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    console.log("Agenda created:", formData);
-    setIsSubmitting(false);
-    
-    // Reset form
-    setFormData({
-      title: "",
-      committee: "",
-      type: "tier1",
-      meetingDate: "",
-      description: "",
-      agendaItems: [],
-    });
+    try {
+      const response = await fetch('/api/agendas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        const newAgenda = await response.json();
+        console.log("Agenda created:", newAgenda);
+        
+        // Redirect to agendas list or the new agenda
+        router.push('/agendas');
+        router.refresh();
+      } else {
+        console.error('Failed to create agenda');
+        alert('Failed to create agenda. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error creating agenda:', error);
+      alert('Error creating agenda. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xs border border-gray-200 dark:border-gray-700">
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Agenda Details
+          Create New Agenda Item
         </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Add a new agenda item to the meeting
+        </p>
       </div>
       
       <form onSubmit={handleSubmit} className="p-6 space-y-6">
         {/* Basic Information */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <div>
-            <Label htmlFor="title">
-              Agenda Title <span className="text-error-500">*</span>
+            <Label htmlFor="name">
+              Agenda Item Name <span className="text-error-500">*</span>
             </Label>
             <Input
-              id="title"
-              name="title"
-              value={formData.title}
+              id="name"
+              name="name"
+              value={formData.name}
               onChange={handleInputChange}
-              placeholder="Enter agenda title"
+              placeholder="e.g., Opening Remarks, Budget Presentation"
               required
             />
           </div>
 
           <div>
-            <Label htmlFor="committee">
-              Committee <span className="text-error-500">*</span>
+            <Label htmlFor="meeting_id">
+              Meeting <span className="text-error-500">*</span>
             </Label>
             <select
-              id="committee"
-              name="committee"
-              value={formData.committee}
+              id="meeting_id"
+              name="meeting_id"
+              value={formData.meeting_id}
               onChange={handleInputChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               required
             >
-              <option value="">Select committee</option>
-              {committees.map(committee => (
-                <option key={committee.id} value={committee.id}>
-                  {committee.name}
+              <option value="">Select meeting</option>
+              {meetings.map(meeting => (
+                <option key={meeting.id} value={meeting.id}>
+                  {meeting.name} - {new Date(meeting.date).toLocaleDateString()}
                 </option>
               ))}
             </select>
@@ -147,39 +153,63 @@ export default function CreateAgendaForm() {
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <div>
-            <Label htmlFor="type">Agenda Type</Label>
+            <Label htmlFor="presenter_name">Presenter Name</Label>
+            <Input
+              id="presenter_name"
+              name="presenter_name"
+              value={formData.presenter_name}
+              onChange={handleInputChange}
+              placeholder="e.g., Minister of Environment"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="ministry_id">Ministry</Label>
             <select
-              id="type"
-              name="type"
-              value={formData.type}
+              id="ministry_id"
+              name="ministry_id"
+              value={formData.ministry_id}
               onChange={handleInputChange}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
             >
-              {agendaTypes.map(type => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
+              <option value="">Select ministry (optional)</option>
+              {ministries.map(ministry => (
+                <option key={ministry.id} value={ministry.id || ""}>
+                  {ministry.name}
                 </option>
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <Label htmlFor="memo_id">Memo ID</Label>
+            <Input
+              id="memo_id"
+              name="memo_id"
+              value={formData.memo_id}
+              onChange={handleInputChange}
+              placeholder="e.g., MEM-001, REF-2024-01"
+            />
+          </div>
 
           <div>
-            <Label htmlFor="meetingDate">
-              Meeting Date <span className="text-error-500">*</span>
-            </Label>
+            <Label htmlFor="sort_order">Sort Order</Label>
             <Input
-              id="meetingDate"
-              name="meetingDate"
-              type="date"
-              value={formData.meetingDate}
+              id="sort_order"
+              name="sort_order"
+              type="number"
+              value={formData.sort_order}
               onChange={handleInputChange}
-              required
+              min="1"
+              max="100"
             />
           </div>
         </div>
 
         <div>
-          <Label htmlFor="description">Agenda Description</Label>
+          <Label htmlFor="description">Agenda Item Description</Label>
           <textarea
             id="description"
             name="description"
@@ -187,108 +217,62 @@ export default function CreateAgendaForm() {
             onChange={handleInputChange}
             rows={3}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            placeholder="Provide agenda description and objectives..."
+            placeholder="Provide detailed description of the agenda item..."
           />
         </div>
 
-        {/* Agenda Items */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <Label>Agenda Items</Label>
-            <button
-              type="button"
-              onClick={addAgendaItem}
-              className="rounded-lg bg-brand-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-600"
+        {/* Settings */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div>
+            <Label htmlFor="status">Status</Label>
+            <select
+              id="status"
+              name="status"
+              value={formData.status}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
             >
-              Add Item
-            </button>
+              {statusOptions.map(status => (
+                <option key={status.id} value={status.id}>
+                  {status.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="space-y-4">
-            {formData.agendaItems.map((item, index) => (
-              <div key={item.id} className="border border-gray-200 rounded-lg p-4 dark:border-gray-700">
-                <div className="flex items-start justify-between mb-4">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white">
-                    Agenda Item {index + 1}
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => removeAgendaItem(index)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <Label htmlFor={`item-title-${index}`}>Item Title</Label>
-                    <Input
-                      id={`item-title-${index}`}
-                      value={item.title}
-                      onChange={(e) => updateAgendaItem(index, "title", e.target.value)}
-                      placeholder="Enter item title"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor={`memo-id-${index}`}>Memo ID</Label>
-                    <Input
-                      id={`memo-id-${index}`}
-                      value={item.memoId}
-                      onChange={(e) => updateAgendaItem(index, "memoId", e.target.value)}
-                      placeholder="e.g., MEM-001"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor={`presenter-${index}`}>Presenter</Label>
-                    <Input
-                      id={`presenter-${index}`}
-                      value={item.presenter}
-                      onChange={(e) => updateAgendaItem(index, "presenter", e.target.value)}
-                      placeholder="Enter presenter name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor={`duration-${index}`}>Duration (minutes)</Label>
-                    <Input
-                      id={`duration-${index}`}
-                      type="number"
-                      value={item.duration}
-                      onChange={(e) => updateAgendaItem(index, "duration", parseInt(e.target.value))}
-                      min="5"
-                      max="120"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <Label>Supporting Documents</Label>
-                  <input
-                    type="file"
-                    multiple
-                    onChange={(e) => handleFileUpload(index, e.target.files!)}
-                    className="mt-2 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"
-                  />
-                  {item.documents.length > 0 && (
-                    <div className="mt-2 text-sm text-gray-500">
-                      {item.documents.length} file(s) selected
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center space-x-3 pt-6">
+            <input
+              id="cabinet_approval_required"
+              name="cabinet_approval_required"
+              type="checkbox"
+              checked={formData.cabinet_approval_required}
+              onChange={handleInputChange}
+              className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            <Label htmlFor="cabinet_approval_required" className="!mb-0">
+              Requires Cabinet Approval
+            </Label>
           </div>
+        </div>
 
-          {formData.agendaItems.length === 0 && (
-            <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg dark:border-gray-600">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                No agenda items added yet
-              </p>
-            </div>
-          )}
+        {/* File Upload Section (Separate from agenda creation) */}
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+          <div className="mb-4">
+            <h3 className="text-md font-medium text-gray-900 dark:text-white">
+              Supporting Documents
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Files can be uploaded after creating the agenda item
+            </p>
+          </div>
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center dark:border-gray-600">
+            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Upload supporting documents after creating the agenda item
+            </p>
+          </div>
         </div>
 
         {/* Action Buttons */}
@@ -296,7 +280,8 @@ export default function CreateAgendaForm() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => window.history.back()}
+            onClick={() => router.back()}
+            disabled={isSubmitting}
           >
             Cancel
           </Button>
@@ -304,7 +289,7 @@ export default function CreateAgendaForm() {
             type="submit"
             disabled={isSubmitting}
           >
-            {isSubmitting ? "Creating Agenda..." : "Create Agenda"}
+            {isSubmitting ? "Creating Agenda Item..." : "Create Agenda Item"}
           </Button>
         </div>
       </form>
