@@ -21,7 +21,15 @@ import {
   Upload,
   File,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 import { formatSystemDate } from '@/lib/utils/date-utils';
 import FileIcon from '@/components/agenda/FileIcon';
@@ -59,7 +67,7 @@ interface Meeting {
     description: string;
     status: string;
     sort_order: number;
-    presenter_name: string;
+    presenter_id: string;
     ministry_id: string | null;
     memo_id: string | null;
     cabinet_approval_required: boolean;
@@ -80,7 +88,7 @@ interface Agenda {
   description: string;
   status: string;
   sort_order: number;
-  presenter_name: string;
+  presenter_id: string;
   ministry_id: string | null;
   memo_id: string | null;
   cabinet_approval_required: boolean;
@@ -104,6 +112,8 @@ interface AgendaDocument {
   uploaded_by: string;
   uploaded_at: string;
   metadata: any;
+  uploaded_by_name?: string;
+  uploaded_by_email?: string;
 }
 
 interface SystemSettings {
@@ -131,6 +141,13 @@ const SingleMeeting: React.FC = () => {
     date_format: 'YYYY-MM-DD'
   });
 
+  // Document Viewer State
+  const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<AgendaDocument | null>(null);
+  const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [rotation, setRotation] = useState(0);
+
   // Fetch system settings
   useEffect(() => {
     const fetchSystemSettings = async () => {
@@ -151,8 +168,10 @@ const SingleMeeting: React.FC = () => {
     fetchSystemSettings();
   }, []);
 
-  // Fetch meeting data (which includes agenda)
+  // Fetch meeting data with abort controller to prevent memory leaks
   useEffect(() => {
+    const abortController = new AbortController();
+    
     const fetchData = async () => {
       if (!meetingId) return;
 
@@ -162,7 +181,9 @@ const SingleMeeting: React.FC = () => {
 
         console.log('🔄 Fetching meeting data for ID:', meetingId);
 
-        const meetingResponse = await fetch(`/api/meetings/${meetingId}`);
+        const meetingResponse = await fetch(`/api/meetings/${meetingId}`, {
+          signal: abortController.signal
+        });
         
         if (!meetingResponse.ok) {
           if (meetingResponse.status === 404) {
@@ -178,21 +199,48 @@ const SingleMeeting: React.FC = () => {
         
         // Set agenda from the meeting data
         if (meetingData.agenda) {
-          setAgenda(meetingData.agenda);
+          // Fetch documents for each agenda item
+          const agendaWithDocuments = await Promise.all(
+            meetingData.agenda.map(async (agendaItem: Agenda) => {
+              try {
+                const docsResponse = await fetch(`/api/agenda/documents?agendaId=${agendaItem.id}`);
+                if (docsResponse.ok) {
+                  const documents = await docsResponse.json();
+                  return { ...agendaItem, documents };
+                }
+                return agendaItem;
+              } catch (error) {
+                console.error(`Error fetching documents for agenda ${agendaItem.id}:`, error);
+                return agendaItem;
+              }
+            })
+          );
+          setAgenda(agendaWithDocuments);
         } else {
           setAgenda([]);
         }
 
       } catch (err) {
-        console.error('❌ Error fetching data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load meeting');
+        // Only set error if it's not an abort error
+        if (err.name !== 'AbortError') {
+          console.error('❌ Error fetching data:', err);
+          setError(err instanceof Error ? err.message : 'Failed to load meeting');
+        }
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchData();
+
+    // Cleanup function to abort fetch if component unmounts
+    return () => {
+      abortController.abort();
+    };
   }, [meetingId]);
+
+  // Get all documents from all agenda items
+  const allDocuments = agenda.flatMap(agendaItem => agendaItem.documents || []);
 
   // Refresh meeting data after agenda operations
   const refreshMeetingData = async () => {
@@ -205,7 +253,23 @@ const SingleMeeting: React.FC = () => {
         setMeeting(meetingData);
         
         if (meetingData.agenda) {
-          setAgenda(meetingData.agenda);
+          // Fetch documents for each agenda item
+          const agendaWithDocuments = await Promise.all(
+            meetingData.agenda.map(async (agendaItem: Agenda) => {
+              try {
+                const docsResponse = await fetch(`/api/agenda/documents?agendaId=${agendaItem.id}`);
+                if (docsResponse.ok) {
+                  const documents = await docsResponse.json();
+                  return { ...agendaItem, documents };
+                }
+                return agendaItem;
+              } catch (error) {
+                console.error(`Error fetching documents for agenda ${agendaItem.id}:`, error);
+                return agendaItem;
+              }
+            })
+          );
+          setAgenda(agendaWithDocuments);
         } else {
           setAgenda([]);
         }
@@ -253,17 +317,117 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
-  // Fetch documents when agenda is selected
+  // Document Viewer Functions
+  const openDocumentViewer = (document: AgendaDocument) => {
+    const documentIndex = allDocuments.findIndex(doc => doc.id === document.id);
+    setSelectedDocument(document);
+    setCurrentDocumentIndex(documentIndex);
+    setZoomLevel(1);
+    setRotation(0);
+    setIsDocumentViewerOpen(true);
+  };
+
+  const closeDocumentViewer = () => {
+    setIsDocumentViewerOpen(false);
+    setSelectedDocument(null);
+    setCurrentDocumentIndex(0);
+    setZoomLevel(1);
+    setRotation(0);
+  };
+
+  const navigateDocument = (direction: 'prev' | 'next') => {
+    if (allDocuments.length === 0) return;
+
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = (currentDocumentIndex + 1) % allDocuments.length;
+    } else {
+      newIndex = (currentDocumentIndex - 1 + allDocuments.length) % allDocuments.length;
+    }
+
+    setCurrentDocumentIndex(newIndex);
+    setSelectedDocument(allDocuments[newIndex]);
+    setZoomLevel(1);
+    setRotation(0);
+  };
+
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.25, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+  };
+
+  const handleRotate = () => {
+    setRotation(prev => (prev + 90) % 360);
+  };
+
+  const handleFullscreen = () => {
+    const viewer = document.getElementById('document-viewer-content');
+    if (viewer) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        viewer.requestFullscreen();
+      }
+    }
+  };
+
+  // Keyboard navigation for document viewer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isDocumentViewerOpen) return;
+
+      switch (e.key) {
+        case 'Escape':
+          closeDocumentViewer();
+          break;
+        case 'ArrowLeft':
+          navigateDocument('prev');
+          break;
+        case 'ArrowRight':
+          navigateDocument('next');
+          break;
+        case '+':
+        case '=':
+          handleZoomIn();
+          break;
+        case '-':
+          handleZoomOut();
+          break;
+        case '0':
+          handleResetZoom();
+          break;
+        case 'r':
+          handleRotate();
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isDocumentViewerOpen, currentDocumentIndex, allDocuments]);
+
+  // Fetch documents when agenda is selected with abort controller
   useEffect(() => {
     if (!selectedAgenda) {
       setDocuments([]);
       return;
     }
 
+    const abortController = new AbortController();
+
     const fetchDocuments = async () => {
       try {
         console.log('🔄 Fetching documents for agenda:', selectedAgenda.id);
-        const response = await fetch(`/api/agenda/documents?agendaId=${selectedAgenda.id}`);
+        const response = await fetch(`/api/agenda/documents?agendaId=${selectedAgenda.id}`, {
+          signal: abortController.signal
+        });
         
         if (response.ok) {
           const docs = await response.json();
@@ -274,12 +438,19 @@ const SingleMeeting: React.FC = () => {
           setDocuments([]);
         }
       } catch (error) {
-        console.error('❌ Error fetching documents:', error);
-        setDocuments([]);
+        if (error.name !== 'AbortError') {
+          console.error('❌ Error fetching documents:', error);
+          setDocuments([]);
+        }
       }
     };
 
     fetchDocuments();
+
+    // Cleanup function
+    return () => {
+      abortController.abort();
+    };
   }, [selectedAgenda]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -372,6 +543,42 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
+  const handleDownloadDocument = async (document: AgendaDocument) => {
+    try {
+      const response = await fetch(document.file_url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = document.name;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      alert('Failed to download document');
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
   const handleEdit = () => {
     router.push(`/meetings/edit/${meetingId}`);
   };
@@ -450,9 +657,223 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
+  // Render Document Viewer
+  const renderDocumentViewer = () => {
+    if (!isDocumentViewerOpen || !selectedDocument) return null;
+
+    const isImage = selectedDocument.file_type === 'image';
+    const isPDF = selectedDocument.file_type === 'pdf';
+
+    return (
+      <div className="fixed inset-0 z-50 flex">
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-75 transition-opacity"
+          onClick={closeDocumentViewer}
+        />
+        
+        {/* Document Viewer Panel - Takes half screen on the right */}
+        <div className="fixed right-0 top-0 h-full w-1/2 bg-white dark:bg-gray-900 shadow-2xl flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <FileIcon fileType={selectedDocument.file_type} className="w-5 h-5 text-blue-500 flex-shrink-0" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                  {selectedDocument.name}
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {formatFileSize(selectedDocument.file_size)} • {currentDocumentIndex + 1} of {allDocuments.length}
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Navigation Controls */}
+              <div className="flex items-center gap-1 mr-4">
+                <button
+                  onClick={() => navigateDocument('prev')}
+                  disabled={allDocuments.length <= 1}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Previous document"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-sm text-gray-500 dark:text-gray-400 mx-1">
+                  {currentDocumentIndex + 1} / {allDocuments.length}
+                </span>
+                <button
+                  onClick={() => navigateDocument('next')}
+                  disabled={allDocuments.length <= 1}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Next document"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* View Controls */}
+              <div className="flex items-center gap-1 mr-4">
+                {isImage && (
+                  <>
+                    <button
+                      onClick={handleZoomOut}
+                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      title="Zoom out"
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {Math.round(zoomLevel * 100)}%
+                    </span>
+                    <button
+                      onClick={handleZoomIn}
+                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      title="Zoom in"
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleResetZoom}
+                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      title="Reset zoom"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleRotate}
+                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                      title="Rotate"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleFullscreen}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  title="Fullscreen"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleDownloadDocument(selectedDocument)}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  title="Download"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={closeDocumentViewer}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Document Content */}
+          <div 
+            id="document-viewer-content"
+            className="flex-1 bg-gray-100 dark:bg-gray-800 overflow-auto flex items-center justify-center p-4"
+          >
+            {isImage ? (
+              <img
+                src={selectedDocument.file_url}
+                alt={selectedDocument.name}
+                className="max-w-full max-h-full object-contain transition-transform duration-200"
+                style={{
+                  transform: `scale(${zoomLevel}) rotate(${rotation}deg)`,
+                  cursor: zoomLevel > 1 ? 'grab' : 'default'
+                }}
+                onMouseDown={(e) => {
+                  if (zoomLevel > 1) {
+                    const img = e.currentTarget;
+                    let isDragging = false;
+                    let startX = e.clientX;
+                    let startY = e.clientY;
+                    let scrollLeft = img.parentElement?.scrollLeft || 0;
+                    let scrollTop = img.parentElement?.scrollTop || 0;
+
+                    const handleMouseMove = (e: MouseEvent) => {
+                      if (!isDragging) return;
+                      const x = e.clientX;
+                      const y = e.clientY;
+                      const walkX = (startX - x) * 2;
+                      const walkY = (startY - y) * 2;
+                      
+                      if (img.parentElement) {
+                        img.parentElement.scrollLeft = scrollLeft + walkX;
+                        img.parentElement.scrollTop = scrollTop + walkY;
+                      }
+                    };
+
+                    const handleMouseUp = () => {
+                      isDragging = false;
+                      document.removeEventListener('mousemove', handleMouseMove);
+                      document.removeEventListener('mouseup', handleMouseUp);
+                    };
+
+                    isDragging = true;
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                  }
+                }}
+              />
+            ) : isPDF ? (
+              <iframe
+                src={selectedDocument.file_url}
+                className="w-full h-full border-0"
+                title={selectedDocument.name}
+              />
+            ) : (
+              <div className="text-center">
+                <FileIcon fileType={selectedDocument.file_type} className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Preview not available
+                </p>
+                <p className="text-gray-500 dark:text-gray-400 mb-4">
+                  This file type cannot be previewed in the browser.
+                </p>
+                <button
+                  onClick={() => handleDownloadDocument(selectedDocument)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mx-auto"
+                >
+                  <Download className="w-4 h-4" />
+                  Download to view
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+              <div>
+                Uploaded by {selectedDocument.uploaded_by_name || 'Unknown'} • {formatDate(selectedDocument.uploaded_at)}
+              </div>
+              <div className="flex items-center gap-4">
+                <span>Use arrow keys to navigate</span>
+                <span>ESC to close</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Add detailed meeting information display
   const renderMeetingDetails = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-4">Meeting Information</h3>
         <div className="space-y-4">
@@ -525,6 +946,73 @@ const SingleMeeting: React.FC = () => {
     </div>
   );
 
+  // Render documents for an agenda item
+  const renderAgendaDocuments = (agendaItem: Agenda) => {
+    if (!agendaItem.documents || agendaItem.documents.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <FileText className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Documents</span>
+        </div>
+        <div className="space-y-2">
+          {agendaItem.documents.map((document) => (
+            <div
+              key={document.id}
+              className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              onClick={() => openDocumentViewer(document)}
+            >
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <FileIcon fileType={document.file_type} className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    {document.name}
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span>{formatFileSize(document.file_size)}</span>
+                    <span>•</span>
+                    <span>{formatDate(document.uploaded_at)}</span>
+                    {document.uploaded_by_name && (
+                      <>
+                        <span>•</span>
+                        <span>By {document.uploaded_by_name}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openDocumentViewer(document);
+                  }}
+                  className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+                  title="View document"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadDocument(document);
+                  }}
+                  className="p-1 text-gray-400 hover:text-green-600 dark:text-gray-500 dark:hover:text-green-400 transition-colors"
+                  title="Download document"
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -562,7 +1050,7 @@ const SingleMeeting: React.FC = () => {
   const StatusIcon = getStatusIcon(meeting.status);
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6">
+    <div className="w-full p-4 md:p-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Meeting Details</h2>
@@ -626,305 +1114,100 @@ const SingleMeeting: React.FC = () => {
       {renderMeetingDetails()}
 
       {/* Quick Add Agenda */}
-      <QuickAddAgenda 
-        meetingId={meetingId} 
-        onAgendaAdded={handleAgendaAdded} 
-      />
+      <div className="mb-6">
+        <QuickAddAgenda 
+          meetingId={meetingId} 
+          onAgendaAdded={handleAgendaAdded} 
+        />
+      </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Left Column - Agenda List */}
-        <div className="lg:col-span-8 2xl:col-span-9">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">Meeting Agenda</h2>
-              <div className="text-sm text-gray-500 dark:text-gray-400">
-                {agenda.length} item{agenda.length !== 1 ? 's' : ''}
-              </div>
+      {/* Agenda Section - Full Width */}
+      <div className="w-full">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">Meeting Agenda</h2>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              {agenda.length} item{agenda.length !== 1 ? 's' : ''}
             </div>
-
-            {agenda.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 dark:text-gray-400 mb-2">No agenda items yet</p>
-                <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
-                  Create your first agenda item to get started
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {agenda.map((agendaItem) => (
-                  <div
-                    key={agendaItem.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                      selectedAgenda?.id === agendaItem.id
-                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700'
-                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
-                    onClick={() => setSelectedAgenda(agendaItem)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                            #{agendaItem.sort_order}
-                          </span>
-                          <h3 className="font-medium text-gray-900 dark:text-white">
-                            {agendaItem.name}
-                          </h3>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${getStatusColor(agendaItem.status)}`}>
-                            {agendaItem.status}
-                          </span>
-                          {agendaItem.cabinet_approval_required && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
-                              Cabinet Approval
-                            </span>
-                          )}
-                        </div>
-                        {agendaItem.description && (
-                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
-                            {agendaItem.description}
-                          </p>
-                        )}
-                        {agendaItem.presenter_name && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Presenter: {agendaItem.presenter_name}
-                          </p>
-                        )}
-                        {agendaItem.documents && agendaItem.documents.length > 0 && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <FileText className="h-3 w-3 text-gray-400" />
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {agendaItem.documents.length} document{agendaItem.documents.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 ml-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditAgenda(agendaItem);
-                          }}
-                          className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-                          title="Edit agenda"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        {selectedAgenda?.id === agendaItem.id && (
-                          <CheckCircle2 className="h-5 w-5 text-blue-500 flex-shrink-0" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* Right Column - Agenda Details & Documents */}
-        <div className="space-y-6 lg:col-span-4 2xl:col-span-3">
-          {/* Selected Agenda Details */}
-          {selectedAgenda ? (
-            <>
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-                    Agenda Details
-                  </h2>
-                  <button
-                    onClick={() => handleEditAgenda(selectedAgenda)}
-                    className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-                    title="Edit agenda"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Agenda Name
-                    </label>
-                    <p className="text-sm text-gray-900 dark:text-white mt-1">
-                      {selectedAgenda.name}
-                    </p>
-                  </div>
-                  
-                  {selectedAgenda.description && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Description
-                      </label>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 whitespace-pre-wrap">
-                        {selectedAgenda.description}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {selectedAgenda.presenter_name && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Presenter
-                      </label>
-                      <p className="text-sm text-gray-900 dark:text-white mt-1">
-                        {selectedAgenda.presenter_name}
-                      </p>
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Status
-                      </label>
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs mt-1 ${getStatusColor(selectedAgenda.status)}`}>
-                        {selectedAgenda.status}
-                      </span>
-                    </div>
-                    
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Order
-                      </label>
-                      <p className="text-sm text-gray-900 dark:text-white mt-1">
-                        #{selectedAgenda.sort_order}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {selectedAgenda.memo_id && (
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Memo ID
-                      </label>
-                      <p className="text-sm text-gray-900 dark:text-white mt-1">
-                        {selectedAgenda.memo_id}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {selectedAgenda.cabinet_approval_required && (
-                    <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
-                      <div className="flex items-center">
-                        <FileText className="h-4 w-4 text-red-600 dark:text-red-400 mr-2" />
-                        <span className="text-sm font-medium text-red-800 dark:text-red-300">
-                          Requires Cabinet Approval
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Documents Section */}
-              <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">
-                    Supporting Documents
-                  </h2>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      disabled={isUploading}
-                      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
-                    />
-                    <button
-                      disabled={isUploading}
-                      className="flex items-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:bg-gray-400 transition-colors"
-                    >
-                      {isUploading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      Upload
-                    </button>
-                  </div>
-                </div>
-
-                {documents.length === 0 ? (
-                  <div className="text-center py-8">
-                    <File className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-500 dark:text-gray-400">No documents uploaded</p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                      Upload supporting files for this agenda item
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {documents.map((doc) => (
-                      <div
-                        key={doc.id}
-                        className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                      >
-                        <div className="flex items-center min-w-0 flex-1">
-                          <FileIcon fileType={doc.file_type} className="h-5 w-5 text-gray-400 mr-3 flex-shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                              {doc.name}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                              <span>{(doc.file_size / 1024 / 1024).toFixed(2)} MB</span>
-                              <span>•</span>
-                              <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
-                              <span>•</span>
-                              <span className="capitalize">{doc.file_type}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                          <a 
-                            href={doc.file_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-700 dark:text-blue-400 transition-colors"
-                            title="Download"
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                          </a>
-                          <button 
-                            className="text-green-600 hover:text-green-700 dark:text-green-400 transition-colors"
-                            onClick={() => {
-                              // Open document in new tab for viewing
-                              window.open(doc.file_url, '_blank');
-                            }}
-                            title="View"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteDocument(doc.id)}
-                            className="text-red-600 hover:text-red-700 dark:text-red-400 transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 text-center dark:border-gray-800 dark:bg-white/3">
+          {agenda.length === 0 ? (
+            <div className="text-center py-12">
               <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Select an Agenda Item
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                Click on an agenda item from the list to view details and upload documents
+              <p className="text-gray-500 dark:text-gray-400 mb-2">No agenda items yet</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
+                Create your first agenda item to get started
               </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {agenda.map((agendaItem) => (
+                <div
+                  key={agendaItem.id}
+                  className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                    selectedAgenda?.id === agendaItem.id
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700'
+                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                  }`}
+                  onClick={() => setSelectedAgenda(agendaItem)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                          #{agendaItem.sort_order}
+                        </span>
+                        <h3 className="font-medium text-gray-900 dark:text-white">
+                          {agendaItem.name}
+                        </h3>
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${getStatusColor(agendaItem.status)}`}>
+                          {agendaItem.status}
+                        </span>
+                        {agendaItem.cabinet_approval_required && (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+                            Cabinet Approval
+                          </span>
+                        )}
+                      </div>
+                      {agendaItem.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
+                          {agendaItem.description}
+                        </p>
+                      )}
+                      {agendaItem.presenter_id && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Presenter: {agendaItem.presenter_id}
+                        </p>
+                      )}
+                      
+                      {/* Render documents for this agenda item */}
+                      {renderAgendaDocuments(agendaItem)}
+                    </div>
+                    <div className="flex items-center gap-2 ml-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditAgenda(agendaItem);
+                        }}
+                        className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
+                        title="Edit agenda"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      {selectedAgenda?.id === agendaItem.id && (
+                        <CheckCircle2 className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Document Viewer */}
+      {renderDocumentViewer()}
 
       {/* Agenda Slide Over for Detailed Editing */}
       <AgendaSlideOver

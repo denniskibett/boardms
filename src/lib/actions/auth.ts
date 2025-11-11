@@ -1,11 +1,12 @@
 'use server'
 
 import { signIn } from 'next-auth/react'
-import { getAuthSystemStatus } from '@/lib/auth'
 
 export async function getSystemStatus() {
   return await getAuthSystemStatus()
 }
+
+
 
 export async function authenticate(
   prevState: string | undefined,

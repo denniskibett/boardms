@@ -1,3 +1,4 @@
+// lib/auth.ts
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { query, testConnection } from './db'
@@ -307,3 +308,6 @@ export async function getAuthSystemStatus() {
     timestamp: new Date().toISOString()
   }
 }
+
+// Export auth configuration for API routes
+export default authOptions

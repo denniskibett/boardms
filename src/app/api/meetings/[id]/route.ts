@@ -77,22 +77,6 @@ export async function GET(
     console.log('🔄 Starting agenda fetch...');
     
     try {
-      // First, test a simple agenda query
-      const simpleAgendaResult = await query(
-        `
-        SELECT 
-          id,
-          name,
-          meeting_id
-        FROM agenda 
-        WHERE meeting_id = $1
-        LIMIT 5
-        `,
-        [meetingId]
-      );
-      
-      console.log('✅ Simple agenda query successful:', simpleAgendaResult.rows.length, 'items found');
-      
       // Full agenda query
       const agendaResult = await query(
         `
@@ -102,7 +86,7 @@ export async function GET(
           a.description,
           a.status,
           a.sort_order,
-          a.presenter_name,
+          a.presenter_id,
           a.ministry_id,
           a.memo_id,
           a.cabinet_approval_required,
@@ -121,12 +105,11 @@ export async function GET(
 
       console.log(`📋 Found ${agendaResult.rows.length} agenda items for meeting ${meetingId}`);
 
-      // ✅ Fetch documents for each agenda - FIXED COLUMN NAMES
+      // ✅ Fetch documents for each agenda - FIXED: Use file_url consistently
       const agendaWithDocuments = await Promise.all(
         agendaResult.rows.map(async (agendaItem) => {
           console.log('🔄 Fetching documents for agenda:', agendaItem.id);
           
-          // FIX: Check what columns actually exist in agenda_documents table
           const documentsResult = await query(
             `
             SELECT 
@@ -152,8 +135,8 @@ export async function GET(
             ...agendaItem,
             documents: documentsResult.rows.map(doc => ({
               ...doc,
-              // Ensure file_url is available for frontend compatibility
-              file_url: doc.file_path || `/api/documents/${doc.id}`
+              // Use file_url directly - no fallback to file_path
+              file_url: doc.file_url
             })) || [],
             ministry: agendaItem.ministry_name
               ? { id: agendaItem.ministry_id, name: agendaItem.ministry_name }
@@ -207,13 +190,13 @@ export async function GET(
   }
 }
 
-// ... keep your existing PUT and DELETE methods unchanged
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const meetingId = params.id;
+    const { id } = await params;
+    const meetingId = id;
     const meetingData = await request.json();
     
     console.log('📝 Updating meeting:', { id: meetingId, ...meetingData });
@@ -300,7 +283,8 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const meetingId = params.id;
+    const { id } = await params;
+    const meetingId = id;
     
     console.log('🗑️ Deleting meeting:', meetingId);
 
@@ -334,4 +318,3 @@ export async function DELETE(
     );
   }
 }
-

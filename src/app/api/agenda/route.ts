@@ -1,45 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { query } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const agendaData = await request.json();
     
-    // Calculate next sort order if not provided
-    let sort_order = body.sort_order;
-    if (!sort_order) {
-      const lastAgenda = await prisma.agenda.findFirst({
-        where: { meeting_id: body.meeting_id },
-        orderBy: { sort_order: 'desc' }
-      });
-      sort_order = lastAgenda ? lastAgenda.sort_order + 1 : 1;
-    }
-    
-    const agenda = await prisma.agenda.create({
-      data: {
-        meeting_id: body.meeting_id,
-        name: body.name,
-        ministry_id: body.ministry_id || null,
-        presenter_name: body.presenter_name || '',
-        sort_order: sort_order,
-        description: body.description || '',
-        status: body.status || 'draft',
-        cabinet_approval_required: body.cabinet_approval_required || false,
-        created_by: body.created_by || 'system', // Replace with actual user from auth
-      },
-      include: {
-        documents: true,
-        ministry: true,
-      }
-    });
+    console.log('📝 Creating new agenda item - Received data:', agendaData);
 
-    return NextResponse.json(agenda);
-  } catch (error) {
-    console.error('Error creating agenda:', error);
-    return NextResponse.json(
-      { error: 'Failed to create agenda' },
-      { status: 500 }
+    // Validate required fields
+    if (!agendaData.name || !agendaData.meeting_id) {
+      console.error('❌ Missing required fields:', agendaData);
+      return NextResponse.json(
+        { 
+          error: 'Missing required fields',
+          details: 'name and meeting_id are required',
+          received: agendaData
+        },
+        { status: 400 }
+      );
+    }
+
+    // Prepare data - handle presenter_id vs presenter_id
+    const insertData = {
+      name: agendaData.name,
+      description: agendaData.description || '',
+      status: agendaData.status || 'draft',
+      sort_order: agendaData.sort_order || 1,
+      meeting_id: agendaData.meeting_id,
+      presenter_id: agendaData.presenter_id || null,
+      ministry_id: agendaData.ministry_id || null,
+      cabinet_approval_required: agendaData.cabinet_approval_required || false,
+      memo_id: agendaData.memo_id || null,
+      created_by: agendaData.created_by || null
+    };
+
+    console.log('🔄 Inserting agenda with data:', insertData);
+
+    // Insert with both presenter_id and presenter_id support
+    const result = await query(
+      `
+      INSERT INTO agenda (
+        name, 
+        description, 
+        status,
+        sort_order, 
+        meeting_id, 
+        presenter_id,
+        ministry_id,
+        cabinet_approval_required,
+        memo_id,
+        created_by,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      RETURNING *
+      `,
+      [
+        insertData.name,
+        insertData.description,
+        insertData.status,
+        insertData.sort_order,
+        insertData.meeting_id,
+        insertData.presenter_id,
+        insertData.ministry_id,
+        insertData.cabinet_approval_required,
+        insertData.memo_id,
+        insertData.created_by
+      ]
     );
+
+    if (result.rows.length === 0) {
+      console.error('❌ No rows returned from INSERT');
+      throw new Error('Failed to create agenda item - no data returned');
+    }
+
+    const newAgenda = result.rows[0];
+    console.log('✅ Agenda item created successfully:', newAgenda);
+
+    return NextResponse.json(newAgenda);
+
+  } catch (error: any) {
+    console.error('❌ Error creating agenda item:', error);
+    
+    // Provide detailed error information
+    const errorResponse = {
+      error: 'Failed to create agenda item',
+      details: error.message,
+      code: error.code,
+      timestamp: new Date().toISOString()
+    };
+    
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 
@@ -49,70 +100,48 @@ export async function GET(request: NextRequest) {
     const meetingId = searchParams.get('meetingId');
 
     if (!meetingId) {
-      // Return all agendas if no meetingId provided
-      const agendas = await prisma.agenda.findMany({
-        include: {
-          documents: true,
-          ministry: true,
-          meeting: {
-            select: {
-              id: true,
-              name: true,
-              start_at: true,
-              location: true
-            }
-          }
-        },
-        orderBy: { created_at: 'desc' }
-      });
-      return NextResponse.json(agendas);
-    }
-
-    const agendas = await prisma.agenda.findMany({
-      where: { meeting_id: meetingId },
-      include: {
-        documents: true,
-        ministry: true,
-      },
-      orderBy: { sort_order: 'asc' }
-    });
-
-    return NextResponse.json(agendas);
-  } catch (error) {
-    console.error('Error fetching agendas:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch agendas' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { id, ...updateData } = body;
-
-    if (!id) {
       return NextResponse.json(
-        { error: 'Agenda ID is required' },
+        { error: 'meetingId parameter is required' },
         { status: 400 }
       );
     }
 
-    const agenda = await prisma.agenda.update({
-      where: { id },
-      data: updateData,
-      include: {
-        documents: true,
-        ministry: true,
-      }
-    });
+    const agendaResult = await query(
+      `
+      SELECT 
+        a.id,
+        a.name,
+        a.description,
+        a.status,
+        a.sort_order,
+        a.presenter_id,
+        a.ministry_id,
+        a.memo_id,
+        a.cabinet_approval_required,
+        a.meeting_id,
+        a.created_at,
+        a.updated_at,
+        m.name AS ministry_name
+      FROM agenda a
+      LEFT JOIN ministries m ON a.ministry_id = m.id
+      WHERE a.meeting_id = $1
+      ORDER BY a.sort_order ASC
+      `,
+      [meetingId]
+    );
 
-    return NextResponse.json(agenda);
+    // Ensure descriptions are returned as plain text
+    const agendaItems = agendaResult.rows.map(item => ({
+      ...item,
+      description: item.description 
+    }));
+
+    return NextResponse.json(agendaItems);
+
   } catch (error) {
-    console.error('Error updating agenda:', error);
+    console.error('❌ Error fetching agenda items:', error);
     return NextResponse.json(
-      { error: 'Failed to update agenda' },
+      { error: 'Failed to fetch agenda items' },
       { status: 500 }
     );
   }
