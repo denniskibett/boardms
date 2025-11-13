@@ -80,69 +80,108 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const meetingData = await request.json();
     
-    // Validate required fields
-    if (!body.meeting_id) {
+    console.log('📝 Creating new meeting - Received data:', meetingData);
+
+    // Validate required fields for meeting creation
+    if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
       return NextResponse.json(
-        { error: 'Meeting ID is required' },
+        { 
+          error: 'Missing required fields',
+          details: 'name, type, start_at, location, and status are required',
+          received: meetingData
+        },
         { status: 400 }
       );
     }
 
-    if (!body.name || body.name.trim() === '') {
-      return NextResponse.json(
-        { error: 'Agenda name is required' },
-        { status: 400 }
-      );
+    // Prepare meeting data
+    const insertData = {
+      name: meetingData.name,
+      type: meetingData.type,
+      start_at: meetingData.start_at,
+      period: meetingData.period || 60,
+      location: meetingData.location,
+      chair_id: meetingData.chair_id || null,
+      status: meetingData.status,
+      description: meetingData.description || '',
+      colour: meetingData.colour || '#3b82f6',
+      actual_end: meetingData.actual_end || null,
+      created_by: meetingData.created_by || 1,
+      approved_by: meetingData.approved_by || null
+    };
+
+    console.log('🔄 Inserting meeting with data:', insertData);
+
+    // Calculate actual_end if not provided
+    let actual_end = insertData.actual_end;
+    if (!actual_end && insertData.period) {
+      // Calculate end time by adding period minutes to start time
+      const startDate = new Date(insertData.start_at);
+      const endDate = new Date(startDate.getTime() + (insertData.period * 60 * 1000));
+      actual_end = endDate.toISOString();
     }
 
-    // Ensure data types are correct
-    const meetingId = Number(body.meeting_id);
-    const name = String(body.name).trim();
-    
-    if (isNaN(meetingId)) {
-      return NextResponse.json(
-        { error: 'Invalid meeting ID' },
-        { status: 400 }
-      );
-    }
-
-    // Calculate next sort order
-    let sort_order = Number(body.sort_order) || 0;
-    if (!sort_order) {
-      const lastAgenda = await prisma.agenda.findFirst({
-        where: { meeting_id: meetingId },
-        orderBy: { sort_order: 'desc' }
-      });
-      sort_order = lastAgenda ? lastAgenda.sort_order + 1 : 1;
-    }
-    
-    const agenda = await prisma.agenda.create({
-      data: {
-        meeting_id: meetingId,
-        name: name,
-        ministry_id: body.ministry_id ? Number(body.ministry_id) : null,
-        presenter_name: body.presenter_name ? String(body.presenter_name) : '',
-        sort_order: sort_order,
-        description: body.description ? String(body.description) : '',
-        status: body.status || 'draft',
-        cabinet_approval_required: Boolean(body.cabinet_approval_required),
-        created_by: body.created_by ? Number(body.created_by) : 1,
-      },
-      include: {
-        documents: true,
-        ministry: true,
-      }
-    });
-
-    return NextResponse.json(agenda);
-  } catch (error) {
-    console.error('Error creating agenda:', error);
-    return NextResponse.json(
-      { error: 'Failed to create agenda' },
-      { status: 500 }
+    // Insert meeting
+    const result = await query(
+      `
+      INSERT INTO meetings (
+        name, 
+        type, 
+        start_at, 
+        period, 
+        location, 
+        chair_id, 
+        status, 
+        description, 
+        colour, 
+        actual_end,
+        created_by,
+        approved_by,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      RETURNING *
+      `,
+      [
+        insertData.name,
+        insertData.type,
+        insertData.start_at,
+        insertData.period,
+        insertData.location,
+        insertData.chair_id,
+        insertData.status,
+        insertData.description,
+        insertData.colour,
+        actual_end,
+        insertData.created_by,
+        insertData.approved_by
+      ]
     );
+
+    if (result.rows.length === 0) {
+      console.error('❌ No rows returned from INSERT');
+      throw new Error('Failed to create meeting - no data returned');
+    }
+
+    const newMeeting = result.rows[0];
+    console.log('✅ Meeting created successfully:', newMeeting);
+
+    return NextResponse.json(newMeeting);
+
+  } catch (error: any) {
+    console.error('❌ Error creating meeting:', error);
+    
+    // Provide detailed error information
+    const errorResponse = {
+      error: 'Failed to create meeting',
+      details: error.message,
+      code: error.code,
+      timestamp: new Date().toISOString()
+    };
+    
+    return NextResponse.json(errorResponse, { status: 500 });
   }
 }
 
@@ -183,6 +222,14 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Calculate actual_end if period is provided
+    let actual_end = meetingData.actual_end;
+    if (!actual_end && meetingData.period) {
+      const startDate = new Date(meetingData.start_at);
+      const endDate = new Date(startDate.getTime() + (meetingData.period * 60 * 1000));
+      actual_end = endDate.toISOString();
+    }
+
     // Update the meeting
     const result = await query(
       `
@@ -206,8 +253,8 @@ export async function PUT(request: NextRequest) {
         meetingData.name,
         meetingData.type,
         meetingData.start_at,
-        meetingData.period || '60',
-        meetingData.actual_end || null,
+        meetingData.period || 60,
+        actual_end,
         meetingData.location,
         meetingData.chair_id || null,
         meetingData.status,
