@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
+import { create } from 'domain';
 
 interface QuickAddAgendaProps {
   meetingId: string;
@@ -33,15 +34,17 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
       // Prepare minimal data that matches your database schema
       const agendaData = {
         name: formData.name.trim(),
-        meeting_id: parseInt(meetingId), // Ensure it's a number
+        meeting_id: parseInt(meetingId), 
         sort_order: nextSortOrder,
-        status: 'draft', // Use a valid status
-        description: '', // Required field but can be empty
-        presenter_name: null, // Set to null since it's integer type
-        ministry_id: null, // Set to null
+        status: 'draft', 
+        description: '', 
+        presenter_id: null, 
+        ministry_id: null, 
         cabinet_approval_required: false,
-        memo_id: null, // Add this required field
-        created_by: null // Add this required field
+        memo_id: null, 
+        created_by: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       console.log('🔄 Adding agenda with data:', agendaData);

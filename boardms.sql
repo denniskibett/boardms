@@ -2,35 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict JOdifXSMbBAeq6bMwEr23CPIwh8RsH3Bl7fPB7vAgaMOLVovEyousUDiNkB4zVP
+\restrict 7bhHyn3bmyGGKvXR4mVQH7o8xdJY9iyYnHXTsgfN3mlPqueK4M9iCoftabGrdMq
 
 -- Dumped from database version 14.19 (Homebrew)
 -- Dumped by pg_dump version 14.19 (Homebrew)
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
-DROP DATABASE IF EXISTS boardms;
---
--- Name: boardms; Type: DATABASE; Schema: -; Owner: admin
---
-
-CREATE DATABASE boardms WITH TEMPLATE = template0 ENCODING = 'UTF8' LOCALE = 'en_US.UTF-8';
-
-
-ALTER DATABASE boardms OWNER TO admin;
-
-\unrestrict JOdifXSMbBAeq6bMwEr23CPIwh8RsH3Bl7fPB7vAgaMOLVovEyousUDiNkB4zVP
-\connect boardms
-\restrict JOdifXSMbBAeq6bMwEr23CPIwh8RsH3Bl7fPB7vAgaMOLVovEyousUDiNkB4zVP
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -177,16 +152,16 @@ CREATE TABLE public.agenda (
     id integer NOT NULL,
     meeting_id integer,
     memo_id integer,
-    title character varying(500) NOT NULL,
-    presenter_ministry_id integer,
-    presenter_name character varying(255),
-    duration integer DEFAULT 15,
+    name character varying(500) NOT NULL,
+    ministry_id integer,
+    presenter_id integer,
     sort_order integer,
-    discussion_points jsonb,
+    description text,
     status character varying(20) DEFAULT 'pending'::character varying,
     cabinet_approval_required boolean DEFAULT false,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer
 );
 
 
@@ -199,8 +174,14 @@ ALTER TABLE public.agenda OWNER TO postgres;
 CREATE TABLE public.agenda_documents (
     id integer NOT NULL,
     agenda_id integer,
-    document_id integer,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    name text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    file_type text,
+    file_url text,
+    file_size integer,
+    uploaded_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    metadata jsonb,
+    uploaded_by integer
 );
 
 
@@ -754,7 +735,7 @@ CREATE TABLE public.meetings (
     approved_by integer,
     created_by integer,
     description text,
-    period interval,
+    period integer,
     actual_end timestamp without time zone,
     colour character varying(20)
 );
@@ -1132,27 +1113,6 @@ ALTER SEQUENCE public.users_id_seq OWNED BY public.users.id;
 
 
 --
--- Name: view_meetings; Type: VIEW; Schema: public; Owner: admin
---
-
-CREATE VIEW public.view_meetings AS
- SELECT meetings.id,
-    meetings.name,
-    meetings.description,
-    meetings.start_at,
-    meetings.period,
-    meetings.actual_end,
-    meetings.location,
-    meetings.created_by,
-    meetings.approved_by,
-    meetings.created_at,
-    meetings.updated_at
-   FROM public.meetings;
-
-
-ALTER TABLE public.view_meetings OWNER TO admin;
-
---
 -- Name: action_letters id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1380,7 +1340,26 @@ COPY public.agencies (id, state_department_id, name, director_general, acronym, 
 -- Data for Name: agenda; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.agenda (id, meeting_id, memo_id, title, presenter_ministry_id, presenter_name, duration, sort_order, discussion_points, status, cabinet_approval_required, created_at, updated_at) FROM stdin;
+COPY public.agenda (id, meeting_id, memo_id, name, ministry_id, presenter_id, sort_order, description, status, cabinet_approval_required, created_at, updated_at, created_by) FROM stdin;
+2	1	\N	Infrastructure Development Proposal	\N	\N	2	{"text": "Comprehensive infrastructure development plan..."}	\N	t	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
+3	1	\N	Energy Sector Updates	\N	\N	3	{"text": "Strategy for renewable energy investments..."}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
+4	1	\N	Closing Remarks	\N	\N	4	{"text": "Final wrap-up and resolutions by Chair"}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
+6	1	\N	Infrastructure Development Proposal	\N	\N	2	{"text": "Comprehensive infrastructure development plan..."}	\N	t	2025-11-09 13:45:59.23921	2025-11-09 13:45:59.23921	1
+7	1	\N	Energy Sector Updates	\N	\N	3	{"text": "Strategy for renewable energy investments..."}	\N	f	2025-11-09 13:45:59.23921	2025-11-09 13:45:59.23921	1
+1	1	\N	Opening Remarks	\N	\N	1	{"text": "Session introduction and welcome by Chair"}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
+9	1	\N	Hi-Vis Reflector A8	\N	\N	1		draft	f	2025-11-10 16:01:31.09932	2025-11-10 16:01:31.09932	\N
+10	19	\N	Prayers	\N	\N	1		draft	f	2025-11-10 16:03:42.55292	2025-11-10 16:03:42.55292	\N
+11	19	\N	Opening Remarks	\N	\N	2		draft	f	2025-11-10 16:03:55.638011	2025-11-10 16:03:55.638011	\N
+12	19	\N	Agenda 1	\N	\N	3		draft	f	2025-11-10 16:05:02.192119	2025-11-10 16:05:02.192119	\N
+13	19	\N	Agenda 2	\N	\N	4		draft	f	2025-11-10 16:15:15.975807	2025-11-10 16:15:15.975807	\N
+14	19	\N	AOB	\N	\N	5		draft	f	2025-11-10 16:15:25.022071	2025-11-10 16:15:25.022071	\N
+19	16	\N	Agenda 4	4	\N	5		draft	f	2025-11-10 17:02:18.493219	2025-11-10 17:43:09.247972	\N
+16	16	\N	Opening Remarks	18	\N	2		draft	f	2025-11-10 16:31:55.816092	2025-11-10 18:09:31.764575	\N
+5	14	\N	Opening Remarks	15	315	1	Session introduction and welcome by Chair	draft	f	2025-11-09 13:45:59.23921	2025-11-10 18:50:50.346292	1
+8	14	\N	Closing Remarks	\N	33	4	Final wrap-up and resolutions by Chair	draft	f	2025-11-09 13:45:59.23921	2025-11-10 18:51:03.063865	1
+15	16	\N	Prayers	\N	32	1		draft	f	2025-11-10 16:31:42.711412	2025-11-10 19:30:43.270362	\N
+18	16	\N	Agenda 3	\N	34	4		draft	f	2025-11-10 16:46:17.771428	2025-11-10 19:39:17.593933	\N
+17	16	\N	Agenda 1	13	3	3		submitted	f	2025-11-10 16:32:02.106407	2025-11-10 20:05:52.810838	\N
 \.
 
 
@@ -1388,7 +1367,9 @@ COPY public.agenda (id, meeting_id, memo_id, title, presenter_ministry_id, prese
 -- Data for Name: agenda_documents; Type: TABLE DATA; Schema: public; Owner: postgres
 --
 
-COPY public.agenda_documents (id, agenda_id, document_id, created_at) FROM stdin;
+COPY public.agenda_documents (id, agenda_id, name, created_at, file_type, file_url, file_size, uploaded_at, metadata, uploaded_by) FROM stdin;
+1	17	1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	2025-11-10 20:05:44.041677	image	/uploads/agenda_documents/1762794344037-szocdsf33u-1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	16874	2025-11-10 20:05:44.041677+03	{"mimeType": "image/jpeg", "uploadedAt": "2025-11-10T17:05:44.040Z", "uploadedBy": "William Kabogo Gitau", "originalName": "1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg", "fileExtension": "jpg"}	11
+2	17	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx	2025-11-10 22:28:56.342875	word	/uploads/agenda_documents/1762802936338-jmikp2nwaq9-KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	21396	2025-11-10 22:28:56.342875+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-10T19:28:56.342Z", "uploadedBy": "William Kabogo Gitau", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "fileExtension": "docx"}	11
 \.
 
 
@@ -1568,6 +1549,7 @@ COPY public.gov_memos (id, name, summary, body, memo_type, ministry_id, priority
 18	Edward Kibet	jkhghghj	hjgjhghjgjh	cabinet	9	medium	draft	11	\N	2025-10-24 12:27:27.389411	2025-10-24 12:27:27.389411	23	\N	11
 19	Edward Kibet	lkjm	vhjg	cabinet	9	medium	draft	1	\N	2025-10-24 14:18:29.526633	2025-10-24 14:18:29.526633	24	\N	1
 20	Max Memo	ghfhgfghf	ghfghfghfhg	cabinet	2	medium	draft	1	\N	2025-10-31 14:52:37.098184	2025-10-31 14:52:37.098184	3	\N	1
+21	boardms Agenda	Meeting to go through the boardms system	Meeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms systemMeeting to go through the boardms system	cabinet	2	urgent	draft	11	\N	2025-11-07 12:29:49.852274	2025-11-07 12:29:49.852274	3	\N	11
 \.
 
 
@@ -1608,24 +1590,25 @@ COPY public.meeting_participants (id, meeting_id, user_id, group_id, created_at,
 --
 
 COPY public.meetings (id, name, type, start_at, location, chair_id, status, created_at, updated_at, approved_by, created_by, description, period, actual_end, colour) FROM stdin;
-1	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:08:36.786348	2025-10-18 20:08:36.786348	\N	\N	\N	\N	\N	\N
-3	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:09:38.96893	2025-10-18 20:09:38.96893	\N	\N	\N	\N	\N	\N
-4	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:09:38.970612	2025-10-18 20:09:38.970612	\N	\N	\N	\N	\N	\N
-5	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:10:31.823405	2025-10-18 20:10:31.823405	\N	\N	\N	\N	\N	\N
-6	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:10:31.825895	2025-10-18 20:10:31.825895	\N	\N	\N	\N	\N	\N
-7	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:27:34.208271	2025-10-19 21:27:34.208271	\N	\N	\N	\N	\N	\N
-8	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:27:34.217799	2025-10-19 21:27:34.217799	\N	\N	\N	\N	\N	\N
-9	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:29:14.73181	2025-10-19 21:29:14.73181	\N	\N	\N	\N	\N	\N
-10	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:29:14.734234	2025-10-19 21:29:14.734234	\N	\N	\N	\N	\N	\N
-11	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:40:39.441296	2025-10-19 21:40:39.441296	\N	\N	\N	\N	\N	\N
-12	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:40:39.443911	2025-10-19 21:40:39.443911	\N	\N	\N	\N	\N	\N
-13	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:43:41.244326	2025-10-19 21:43:41.244326	\N	\N	\N	\N	\N	\N
-14	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:43:41.246264	2025-10-19 21:43:41.246264	\N	\N	\N	\N	\N	\N
-15	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:51:02.504194	2025-10-19 21:51:02.504194	\N	\N	\N	\N	\N	\N
-16	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:51:02.507257	2025-10-19 21:51:02.507257	\N	\N	\N	\N	\N	\N
-17	Cabinet Committee on Governance and Security - Q1 2024	cabinet_committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:57:31.116062	2025-10-19 21:57:31.116062	\N	\N	\N	\N	\N	\N
-18	Full Cabinet Meeting - March 2024	full_cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:57:31.117098	2025-10-19 21:57:31.117098	\N	\N	\N	\N	\N	\N
-2	Full Cabinet Meeting - March 2024	full_cabinet	2025-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:08:36.789303	2025-10-18 20:08:36.789303	\N	\N	\N	\N	\N	\N
+2	Full Cabinet Meeting - March 2024	Cabinet	2025-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:08:36.789303	2025-10-18 20:08:36.789303	\N	\N	\N	45	\N	\N
+4	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:09:38.970612	2025-10-18 20:09:38.970612	\N	\N	\N	75	\N	\N
+6	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-18 20:10:31.825895	2025-10-18 20:10:31.825895	\N	\N	\N	105	\N	\N
+8	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:27:34.217799	2025-10-19 21:27:34.217799	\N	\N	\N	135	\N	\N
+10	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:29:14.734234	2025-10-19 21:29:14.734234	\N	\N	\N	165	\N	\N
+12	Full Cabinet Meeting - March 2024	Cabinet	2024-11-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:40:39.443911	2025-10-19 21:40:39.443911	\N	\N	\N	195	\N	\N
+16	Full Cabinet Meeting - March 2025	Cabinet	2025-11-10 22:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:51:02.507257	2025-11-10 16:31:21.36492	\N	\N		2550	2025-11-12 22:30:00	#ef4444
+18	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:57:31.117098	2025-10-19 21:57:31.117098	\N	\N	\N	300	\N	\N
+3	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:09:38.96893	2025-10-18 20:09:38.96893	\N	\N	\N	60	\N	\N
+5	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:10:31.823405	2025-10-18 20:10:31.823405	\N	\N	\N	90	\N	\N
+7	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:27:34.208271	2025-10-19 21:27:34.208271	\N	\N	\N	120	\N	\N
+9	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:29:14.73181	2025-10-19 21:29:14.73181	\N	\N	\N	150	\N	\N
+11	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:40:39.441296	2025-10-19 21:40:39.441296	\N	\N	\N	180	\N	\N
+17	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:57:31.116062	2025-10-19 21:57:31.116062	\N	\N	\N	270	\N	\N
+15	Cabinet Committee on Governance and Security - Q1 2025	Committee	2025-11-16 03:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:51:02.504194	2025-11-09 23:02:16.495392	\N	\N		240	2025-11-16 13:00:00	#f59e0b
+13	Cabinet Committee on Governance and Security - Q1 2025	Committee	2025-11-12 21:00:00	State House, Nairobi	2	Scheduled	2025-10-19 21:43:41.244326	2025-11-10 00:19:02.257969	\N	\N		2100	2025-11-14 14:00:00	#8b5cf6
+1	Governance and Security - Q1 2025	Committee	2025-11-20 21:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:08:36.786348	2025-11-10 00:20:33.320657	\N	\N		30	2025-11-21 03:30:00	#f97316
+19	6th Full Cabinet Meeting	Cabinet	2025-11-27 18:00:00	State House, Nairobi	1	Scheduled	2025-11-09 18:31:36.996892	2025-11-10 00:20:45.724529	\N	1	Full cabinet meeting	120	2025-11-28 02:00:00	#10b981
+14	Full Cabinet Meeting - March 2024	Cabinet	2025-11-06 19:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:43:41.246264	2025-11-10 00:21:06.765439	\N	\N		225	2025-11-07 04:45:00	#ef4444
 \.
 
 
@@ -1746,7 +1729,7 @@ COPY public.state_departments (id, ministry_id, name, principal_secretary, locat
 --
 
 COPY public.system_settings (id, name, version, timezone, date_format, language, email_notifications, push_notifications, meeting_reminders, deadline_alerts, weekly_reports, session_timeout, password_policy, two_factor_auth, ip_whitelist, audit_log_retention, smtp_enabled, smtp_server, smtp_port, file_storage, max_file_size, created_at, updated_at, logo, slogan) FROM stdin;
-1	E - Cabinet System	2.0.2	Africa/Nairobi	DD/MM/YYYY	English	t	t	f	f	t	30	basic	t	{192.168.1.0/24}	365	t	smtp.gov.go.ke	587	local	10	2025-11-05 23:19:01.123+03	2025-11-06 11:38:43.935255+03	logo.svg	Government Decision Management Platform
+1	boardms System	2.0.2	Africa/Nairobi	DD/MM/YYYY	English	t	t	t	t	f	30	strong	f	{192.168.1.0/24}	365	t	smtp.gov.go.ke	587	local	10	2025-11-05 23:19:01.123+03	2025-11-07 11:36:32.47068+03	logo.svg	Government Decision Management Platform
 \.
 
 
@@ -1778,15 +1761,14 @@ COPY public.users (id, name, email, password, role, status, phone, last_login, c
 3	H.E Dr. Musalia Mudavadi E.G.H.	mudavadi@primecabinet.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Prime Cabinet Secretary	active	\N	2025-11-06 11:49:26.039362	2025-10-18 20:05:49.446396	2025-10-20 12:31:19.460478	\N
 14	Lee Maiyani Kinyanjui	info@investment.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-06 12:15:53.673823	2025-10-18 20:05:49.689673	2025-10-20 12:37:50.711031	\N
 12	Aden Duale, E.G.H.	duale@health.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.636794	2025-10-20 12:30:40.715962	\N
+11	William Kabogo Gitau	owalo@ict.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-07 11:45:30.944582	2025-10-18 20:05:49.615597	2025-10-20 12:39:37.601791	\N
 47	Dr. Belio Kipsang	kipsang@education.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Principal Secretary	inactive	\N	\N	2025-10-18 20:08:36.74462	2025-10-22 12:02:20.446546	\N
 7	John Mbadi Ng’ongo, E.G.H.	ndungu@treasury.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.531267	2025-10-20 12:36:46.187128	\N
-11	William Kabogo Gitau	owalo@ict.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-06 08:52:25.408155	2025-10-18 20:05:49.615597	2025-10-20 12:39:37.601791	\N
 31	Davis Chirchir, E.G.H	info@transport.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 13:28:44.33036	2025-10-18 20:08:36.73816	2025-10-20 12:41:12.921993	\N
 9	Julius Migos Ogamba	migos@education.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.573707	2025-10-20 12:33:34.473066	\N
 32	Alice Wahome, E.G.H.	info@lands.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738586	2025-10-20 12:33:57.380222	\N
 38	Dr. Alfred Mutua, E.G.H.	info@labour.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.740955	2025-10-20 12:34:05.434036	\N
 41	Hassan Ali Joho, E.G.H	info@mining.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742089	2025-10-20 12:34:22.465865	\N
-1	H.E. Dr. William Samoei Ruto, C.G.H	president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	President	active	\N	2025-11-06 11:36:33.474784	2025-10-18 20:05:49.371046	2025-10-20 12:28:25.024845	https://www.president.go.ke/wp-content/uploads/administration.jpg
 33	Eric Muriithi Muuga	info@water.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738985	2025-10-20 12:37:06.118724	\N
 42	Dr. Deborah Mulongo Barasa	info@environment.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742456	2025-10-20 12:37:30.011469	\N
 40	Mutahi Kagwe E.G.H.	info@kilimo.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 20:28:48.755589	2025-10-18 20:08:36.741717	2025-10-20 12:38:52.479726	\N
@@ -1794,6 +1776,7 @@ COPY public.users (id, name, email, password, role, status, phone, last_login, c
 39	Hanna Wendot Cheptumo	info@gender.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.741324	2025-10-20 12:41:54.857949	\N
 5	Ms. Dorcas Agik Oduor SC, E.B.S., O.G.W.	info@attorneygeneral.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Attorney General	active	\N	\N	2025-10-18 20:05:49.488775	2025-10-20 12:42:29.434883	\N
 44	Ms. Beatrice Asukul Moe	info@eac.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 21:07:32.801766	2025-10-18 20:08:36.743466	2025-10-20 12:43:07.417741	\N
+1	H.E. Dr. William Samoei Ruto, C.G.H	president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	President	active	\N	2025-11-07 11:22:44.831764	2025-10-18 20:05:49.371046	2025-10-20 12:28:25.024845	https://www.president.go.ke/wp-content/uploads/administration.jpg
 \.
 
 
@@ -1815,14 +1798,14 @@ SELECT pg_catalog.setval('public.agencies_id_seq', 33, true);
 -- Name: agenda_documents_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.agenda_documents_id_seq', 1, false);
+SELECT pg_catalog.setval('public.agenda_documents_id_seq', 2, true);
 
 
 --
 -- Name: agenda_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.agenda_id_seq', 1, false);
+SELECT pg_catalog.setval('public.agenda_id_seq', 19, true);
 
 
 --
@@ -1878,7 +1861,7 @@ SELECT pg_catalog.setval('public.documents_id_seq', 1, false);
 -- Name: gov_memos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.gov_memos_id_seq', 20, true);
+SELECT pg_catalog.setval('public.gov_memos_id_seq', 21, true);
 
 
 --
@@ -1913,7 +1896,7 @@ SELECT pg_catalog.setval('public.meeting_participants_id_seq', 1, false);
 -- Name: meetings_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.meetings_id_seq', 18, true);
+SELECT pg_catalog.setval('public.meetings_id_seq', 19, true);
 
 
 --
@@ -2001,7 +1984,7 @@ ALTER TABLE ONLY public.agencies
 --
 
 ALTER TABLE ONLY public.agenda_documents
-    ADD CONSTRAINT agenda_documents_agenda_id_document_id_key UNIQUE (agenda_id, document_id);
+    ADD CONSTRAINT agenda_documents_agenda_id_document_id_key UNIQUE (agenda_id, name);
 
 
 --
@@ -2383,11 +2366,11 @@ ALTER TABLE ONLY public.agenda_documents
 
 
 --
--- Name: agenda_documents agenda_documents_document_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: agenda_documents agenda_documents_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.agenda_documents
-    ADD CONSTRAINT agenda_documents_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+    ADD CONSTRAINT agenda_documents_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id);
 
 
 --
@@ -2411,7 +2394,7 @@ ALTER TABLE ONLY public.agenda
 --
 
 ALTER TABLE ONLY public.agenda
-    ADD CONSTRAINT agenda_presenter_ministry_id_fkey FOREIGN KEY (presenter_ministry_id) REFERENCES public.ministries(id) ON DELETE CASCADE;
+    ADD CONSTRAINT agenda_presenter_ministry_id_fkey FOREIGN KEY (ministry_id) REFERENCES public.ministries(id) ON DELETE CASCADE;
 
 
 --
@@ -2778,5 +2761,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE admin IN SCHEMA public GRANT ALL ON TABLES  TO
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JOdifXSMbBAeq6bMwEr23CPIwh8RsH3Bl7fPB7vAgaMOLVovEyousUDiNkB4zVP
+\unrestrict 7bhHyn3bmyGGKvXR4mVQH7o8xdJY9iyYnHXTsgfN3mlPqueK4M9iCoftabGrdMq
 

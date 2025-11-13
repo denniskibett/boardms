@@ -41,10 +41,10 @@ export async function POST(request: NextRequest) {
       `
       INSERT INTO agenda (
         name, 
-        description, 
-        status,
+        meeting_id,         
         sort_order, 
-        meeting_id, 
+        status,
+        description, 
         presenter_id,
         ministry_id,
         cabinet_approval_required,
@@ -52,15 +52,15 @@ export async function POST(request: NextRequest) {
         created_by,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
       RETURNING *
       `,
       [
         insertData.name,
-        insertData.description,
-        insertData.status,
-        insertData.sort_order,
         insertData.meeting_id,
+        insertData.sort_order,
+        insertData.status,
+        insertData.description,
         insertData.presenter_id,
         insertData.ministry_id,
         insertData.cabinet_approval_required,

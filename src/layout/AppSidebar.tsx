@@ -36,25 +36,25 @@ const navItems: NavItem[] = [
     name: "Dashboard",
     path: "/dashboard",
   },
-  {
-    icon: <DocumentIcon />,
-    name: "Government Memos",
-    subItems: [
-      // { name: "Create Memo", path: "/memos/create" },
-      { name: "My Memos", path: "/memos" },
-      { name: "All Memos", path: "/memos/all" },
-    ],
-  },
-  {
-    icon: <PageIcon />, 
-    name: "Agenda & Books",
-    subItems: [
-      { name: "All Agenda", path: "/agenda" },
-      { name: "Create Agenda", path: "/agenda/create" },
-      { name: "Committee Agenda Books", path: "/committees/infrastructure/tier1-agenda" },
-      { name: "Cabinet Agenda Books", path: "/cabinet/tier2-agenda" },
-    ],
-  },
+  // {
+  //   icon: <DocumentIcon />,
+  //   name: "Government Memos",
+  //   subItems: [
+  //     // { name: "Create Memo", path: "/memos/create" },
+  //     { name: "My Memos", path: "/memos" },
+  //     { name: "All Memos", path: "/memos/all" },
+  //   ],
+  // },
+  // {
+  //   icon: <PageIcon />, 
+  //   name: "Agenda & Books",
+  //   subItems: [
+  //     { name: "All Agenda", path: "/agenda" },
+  //     { name: "Create Agenda", path: "/agenda/create" },
+  //     { name: "Committee Agenda Books", path: "/committees/infrastructure/tier1-agenda" },
+  //     { name: "Cabinet Agenda Books", path: "/cabinet/tier2-agenda" },
+  //   ],
+  // },
   // {
   //   icon: <CommitteeIcon />,
   //   name: "Committees",

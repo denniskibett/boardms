@@ -2,39 +2,32 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  MapPin,
-  Clock,
-  Calendar,
-  Users,
-  User,
-  FileText,
-  Tag,
-  CheckCircle,
+  ArrowLeft,
   XCircle,
   Loader2,
-  ArrowLeft,
-  Edit,
   Trash2,
-  Globe,
-  Mail,
-  Plus,
-  Upload,
+  Download,
+  BookOpen,
   File,
   Eye,
   CheckCircle2,
-  Download,
   X,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   ZoomIn,
   ZoomOut,
-  RotateCcw
+  RotateCcw,
+  Search,
+  Users,
+  Plus
 } from 'lucide-react';
-import { formatSystemDate } from '@/lib/utils/date-utils';
-import FileIcon from '@/components/agenda/FileIcon';
+import MeetingDetails from './MeetingDetails';
+import MeetingInvitees from './MeetingInvitees';
+import MeetingAgenda from './MeetingAgenda';
+import MeetingParticipants from '@/components/meetings/MeetingParticipants';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
-import QuickAddAgenda from '@/components/agenda/QuickAddAgenda';
+import FileIcon from '@/components/agenda/FileIcon';
 
 interface Meeting {
   id: string;
@@ -53,6 +46,7 @@ interface Meeting {
   chair_name?: string;
   chair_email?: string;
   chair_role?: string;
+  chair_image?: string;
   created_by_name?: string;
   approved_by_name?: string;
   participants?: Array<{
@@ -60,6 +54,7 @@ interface Meeting {
     name: string;
     email: string;
     role: string;
+    image?: string;
   }>;
   agenda?: Array<{
     id: string;
@@ -121,6 +116,16 @@ interface SystemSettings {
   date_format: string;
 }
 
+interface DocumentContent {
+  id: string;
+  agendaId: string;
+  agendaName: string;
+  document: AgendaDocument;
+  htmlContent: string;
+  pageCount: number;
+  currentPage: number;
+}
+
 const SingleMeeting: React.FC = () => {
   const params = useParams();
   const router = useRouter();
@@ -129,17 +134,9 @@ const SingleMeeting: React.FC = () => {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [agenda, setAgenda] = useState<Agenda[]>([]);
   const [selectedAgenda, setSelectedAgenda] = useState<Agenda | null>(null);
-  const [documents, setDocuments] = useState<AgendaDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isAgendaSlideOverOpen, setIsAgendaSlideOverOpen] = useState(false);
-  const [editingAgenda, setEditingAgenda] = useState<Agenda | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>({
-    timezone: 'UTC',
-    date_format: 'YYYY-MM-DD'
-  });
 
   // Document Viewer State
   const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
@@ -147,26 +144,18 @@ const SingleMeeting: React.FC = () => {
   const [currentDocumentIndex, setCurrentDocumentIndex] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [documentContents, setDocumentContents] = useState<DocumentContent[]>([]);
+  const [currentContentIndex, setCurrentContentIndex] = useState(0);
+  const [isConverting, setIsConverting] = useState(false);
 
-  // Fetch system settings
-  useEffect(() => {
-    const fetchSystemSettings = async () => {
-      try {
-        const response = await fetch('/api/settings');
-        if (response.ok) {
-          const settings = await response.json();
-          setSystemSettings({
-            timezone: settings.timezone || 'UTC',
-            date_format: settings.date_format || 'YYYY-MM-DD'
-          });
-        }
-      } catch (error) {
-        console.error('Failed to fetch system settings:', error);
-      }
-    };
+  // Slide-over states
+  const [isParticipantsSlideOverOpen, setIsParticipantsSlideOverOpen] = useState(false);
+  const [isAgendaSlideOverOpen, setIsAgendaSlideOverOpen] = useState(false);
 
-    fetchSystemSettings();
-  }, []);
+  // Get all documents from all agenda items
+  const allDocuments = agenda.flatMap(agendaItem => agendaItem.documents || []);
 
   // Fetch meeting data with abort controller to prevent memory leaks
   useEffect(() => {
@@ -216,6 +205,14 @@ const SingleMeeting: React.FC = () => {
             })
           );
           setAgenda(agendaWithDocuments);
+          
+          // Auto-select first agenda with documents
+          const firstAgendaWithDocs = agendaWithDocuments.find(agenda => agenda.documents && agenda.documents.length > 0);
+          if (firstAgendaWithDocs) {
+            setSelectedAgenda(firstAgendaWithDocs);
+          } else if (agendaWithDocuments.length > 0) {
+            setSelectedAgenda(agendaWithDocuments[0]);
+          }
         } else {
           setAgenda([]);
         }
@@ -239,8 +236,210 @@ const SingleMeeting: React.FC = () => {
     };
   }, [meetingId]);
 
-  // Get all documents from all agenda items
-  const allDocuments = agenda.flatMap(agendaItem => agendaItem.documents || []);
+  // Convert documents to HTML content when agenda is selected
+  useEffect(() => {
+    const convertDocumentsToHTML = async () => {
+      if (!selectedAgenda || !selectedAgenda.documents || selectedAgenda.documents.length === 0) {
+        setDocumentContents([]);
+        return;
+      }
+
+      setIsConverting(true);
+      const contents: DocumentContent[] = [];
+
+      for (const document of selectedAgenda.documents) {
+        try {
+          console.log('🔄 Converting document to HTML:', document.name);
+          const htmlContent = await convertToHTML(document);
+          
+          contents.push({
+            id: document.id,
+            agendaId: selectedAgenda.id,
+            agendaName: selectedAgenda.name,
+            document: document,
+            htmlContent: htmlContent,
+            pageCount: 1,
+            currentPage: 1
+          });
+        } catch (error) {
+          console.error('❌ Failed to convert document:', document.name, error);
+          // Add fallback content
+          contents.push({
+            id: document.id,
+            agendaId: selectedAgenda.id,
+            agendaName: selectedAgenda.name,
+            document: document,
+            htmlContent: `
+              <div class="document-fallback">
+                <h3>${document.name}</h3>
+                <p>This document format cannot be previewed in the browser.</p>
+                <p>File type: ${document.file_type}</p>
+                <p>Size: ${formatFileSize(document.file_size)}</p>
+              </div>
+            `,
+            pageCount: 1,
+            currentPage: 1
+          });
+        }
+      }
+
+      setDocumentContents(contents);
+      setIsConverting(false);
+      console.log('✅ Document conversion completed:', contents.length, 'documents converted');
+    };
+
+    convertDocumentsToHTML();
+  }, [selectedAgenda]);
+
+  // Convert various file types to HTML
+  const convertToHTML = async (document: AgendaDocument): Promise<string> => {
+    const fileExtension = document.name.split('.').pop()?.toLowerCase() || '';
+    
+    // For images
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(fileExtension)) {
+      return `
+        <div class="image-document">
+          <img src="${document.file_url}" alt="${document.name}" style="max-width: 100%; height: auto;" />
+          <div class="image-caption">
+            <strong>${document.name}</strong>
+          </div>
+        </div>
+      `;
+    }
+
+    // For PDF files - using PDF.js
+    if (fileExtension === 'pdf') {
+      return await convertPDFToHTML(document);
+    }
+
+    // For Word documents - using Mammoth.js
+    if (['doc', 'docx'].includes(fileExtension)) {
+      return await convertWordToHTML(document);
+    }
+
+    // For Excel files
+    if (['xls', 'xlsx'].includes(fileExtension)) {
+      return `
+        <div class="excel-fallback">
+          <h3>Excel Document: ${document.name}</h3>
+          <p>Excel files are best viewed by downloading and opening in Microsoft Excel.</p>
+          <p>File size: ${formatFileSize(document.file_size)}</p>
+        </div>
+      `;
+    }
+
+    // For PowerPoint files
+    if (['ppt', 'pptx'].includes(fileExtension)) {
+      return `
+        <div class="powerpoint-fallback">
+          <h3>PowerPoint Presentation: ${document.name}</h3>
+          <p>Presentation files are best viewed by downloading and opening in Microsoft PowerPoint.</p>
+          <p>File size: ${formatFileSize(document.file_size)}</p>
+        </div>
+      `;
+    }
+
+    // For text files
+    if (['txt', 'md'].includes(fileExtension)) {
+      try {
+        const response = await fetch(document.file_url);
+        const text = await response.text();
+        return `
+          <div class="text-document">
+            <pre>${text}</pre>
+          </div>
+        `;
+      } catch (error) {
+        throw new Error('Failed to read text file');
+      }
+    }
+
+    // Default fallback
+    return `
+      <div class="unknown-format">
+        <h3>${document.name}</h3>
+        <p>This file format (${fileExtension}) cannot be previewed in the browser.</p>
+        <p>Please download the file to view its contents.</p>
+      </div>
+    `;
+  };
+
+  // Convert PDF to HTML using PDF.js
+  const convertPDFToHTML = async (document: AgendaDocument): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      // Dynamically import PDF.js
+      import('pdfjs-dist').then(pdfjsLib => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js`;
+
+        const loadingTask = pdfjsLib.getDocument(document.file_url);
+        loadingTask.promise.then((pdf: any) => {
+          let htmlContent = `<div class="pdf-document">`;
+          htmlContent += `<h3>${document.name}</h3>`;
+          htmlContent += `<div class="pdf-pages">`;
+
+          // Only render first few pages for performance
+          const pageCount = Math.min(pdf.numPages, 10);
+          const pagePromises = [];
+
+          for (let i = 1; i <= pageCount; i++) {
+            pagePromises.push(
+              pdf.getPage(i).then((page: any) => {
+                const viewport = page.getViewport({ scale: 1.5 });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                  canvasContext: context,
+                  viewport: viewport
+                };
+
+                return page.render(renderContext).promise.then(() => {
+                  return `<div class="pdf-page">
+                    <div class="page-number">Page ${i}</div>
+                    <img src="${canvas.toDataURL()}" alt="Page ${i}" />
+                  </div>`;
+                });
+              })
+            );
+          }
+
+          Promise.all(pagePromises).then(pages => {
+            htmlContent += pages.join('');
+            htmlContent += `</div></div>`;
+            resolve(htmlContent);
+          });
+        }).catch(reject);
+      }).catch(reject);
+    });
+  };
+
+  // Convert Word documents to HTML using Mammoth.js
+  const convertWordToHTML = async (document: AgendaDocument): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      import('mammoth').then(mammoth => {
+        fetch(document.file_url)
+          .then(response => response.arrayBuffer())
+          .then(arrayBuffer => {
+            mammoth.convertToHtml({ arrayBuffer })
+              .then((result: any) => {
+                const htmlContent = `
+                  <div class="word-document">
+                    <h3>${document.name}</h3>
+                    <div class="word-content">
+                      ${result.value}
+                    </div>
+                  </div>
+                `;
+                resolve(htmlContent);
+              })
+              .catch(reject);
+          })
+          .catch(reject);
+      }).catch(reject);
+    });
+  };
 
   // Refresh meeting data after agenda operations
   const refreshMeetingData = async () => {
@@ -281,74 +480,64 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
-  // Handle agenda creation
-  const handleAgendaAdded = async () => {
-    await refreshMeetingData();
-  };
-
-  // Handle agenda edit click
-  const handleEditAgenda = (agendaItem: Agenda) => {
-    setEditingAgenda(agendaItem);
-    setIsAgendaSlideOverOpen(true);
-  };
-
-  // Handle agenda update from slideover
-  const handleAgendaUpdate = (updatedAgenda: Agenda) => {
-    console.log('🔄 Updating agenda in state:', updatedAgenda);
-    
-    // Update agenda list
-    setAgenda(prev => prev.map(agendaItem => 
-      agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
-    ));
-    
-    // Update selected agenda if it's the one being edited
-    if (selectedAgenda?.id === updatedAgenda.id) {
-      setSelectedAgenda(updatedAgenda);
-    }
-    
-    // Also update the meeting data
-    if (meeting) {
-      setMeeting(prev => prev ? {
-        ...prev,
-        agenda: prev.agenda ? prev.agenda.map(agendaItem => 
-          agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
-        ) : [updatedAgenda]
-      } : null);
-    }
-  };
-
   // Document Viewer Functions
-  const openDocumentViewer = (document: AgendaDocument) => {
-    const documentIndex = allDocuments.findIndex(doc => doc.id === document.id);
-    setSelectedDocument(document);
-    setCurrentDocumentIndex(documentIndex);
-    setZoomLevel(1);
-    setRotation(0);
-    setIsDocumentViewerOpen(true);
+  const openDocumentViewer = (document?: AgendaDocument) => {
+    if (document) {
+      const agendaItem = agenda.find(agenda => agenda.documents?.some(doc => doc.id === document.id));
+      if (agendaItem) {
+        setSelectedAgenda(agendaItem);
+      }
+    }
+    
+    if (selectedAgenda && selectedAgenda.documents && selectedAgenda.documents.length > 0) {
+      setIsDocumentViewerOpen(true);
+      setCurrentContentIndex(0);
+      setZoomLevel(1);
+      setRotation(0);
+    }
   };
 
   const closeDocumentViewer = () => {
     setIsDocumentViewerOpen(false);
     setSelectedDocument(null);
-    setCurrentDocumentIndex(0);
+    setCurrentContentIndex(0);
     setZoomLevel(1);
     setRotation(0);
+    setSearchTerm('');
   };
 
-  const navigateDocument = (direction: 'prev' | 'next') => {
-    if (allDocuments.length === 0) return;
+  const navigateContent = (direction: 'prev' | 'next') => {
+    if (documentContents.length === 0) return;
 
     let newIndex;
     if (direction === 'next') {
-      newIndex = (currentDocumentIndex + 1) % allDocuments.length;
+      newIndex = (currentContentIndex + 1) % documentContents.length;
     } else {
-      newIndex = (currentDocumentIndex - 1 + allDocuments.length) % allDocuments.length;
+      newIndex = (currentContentIndex - 1 + documentContents.length) % documentContents.length;
     }
 
-    setCurrentDocumentIndex(newIndex);
-    setSelectedDocument(allDocuments[newIndex]);
-    setZoomLevel(1);
-    setRotation(0);
+    setCurrentContentIndex(newIndex);
+  };
+
+  const navigateAgenda = (direction: 'prev' | 'next') => {
+    if (agenda.length === 0) return;
+
+    const currentIndex = agenda.findIndex(a => a.id === selectedAgenda?.id);
+    let newIndex;
+    
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % agenda.length;
+    } else {
+      newIndex = (currentIndex - 1 + agenda.length) % agenda.length;
+    }
+
+    const newAgenda = agenda[newIndex];
+    setSelectedAgenda(newAgenda);
+    
+    // If document viewer is open, reset to first document of new agenda
+    if (isDocumentViewerOpen) {
+      setCurrentContentIndex(0);
+    }
   };
 
   const handleZoomIn = () => {
@@ -378,7 +567,33 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
-  // Keyboard navigation for document viewer
+  const handleSearch = () => {
+    if (!searchTerm.trim()) return;
+    
+    setIsSearching(true);
+    const contentElement = document.getElementById('document-content');
+    if (contentElement) {
+      const text = contentElement.innerText || contentElement.textContent || '';
+      const regex = new RegExp(searchTerm, 'gi');
+      const matches = text.match(regex);
+      
+      if (matches) {
+        // Highlight matches (simplified implementation)
+        const highlightedContent = documentContents[currentContentIndex].htmlContent.replace(
+          regex, 
+          match => `<mark class="search-highlight">${match}</mark>`
+        );
+        
+        // Create a temporary element to update the content
+        const tempElement = document.createElement('div');
+        tempElement.innerHTML = highlightedContent;
+        contentElement.innerHTML = tempElement.innerHTML;
+      }
+    }
+    setIsSearching(false);
+  };
+
+  // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isDocumentViewerOpen) return;
@@ -388,10 +603,16 @@ const SingleMeeting: React.FC = () => {
           closeDocumentViewer();
           break;
         case 'ArrowLeft':
-          navigateDocument('prev');
+          navigateContent('prev');
           break;
         case 'ArrowRight':
-          navigateDocument('next');
+          navigateContent('next');
+          break;
+        case 'ArrowUp':
+          navigateAgenda('prev');
+          break;
+        case 'ArrowDown':
+          navigateAgenda('next');
           break;
         case '+':
         case '=':
@@ -411,137 +632,7 @@ const SingleMeeting: React.FC = () => {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isDocumentViewerOpen, currentDocumentIndex, allDocuments]);
-
-  // Fetch documents when agenda is selected with abort controller
-  useEffect(() => {
-    if (!selectedAgenda) {
-      setDocuments([]);
-      return;
-    }
-
-    const abortController = new AbortController();
-
-    const fetchDocuments = async () => {
-      try {
-        console.log('🔄 Fetching documents for agenda:', selectedAgenda.id);
-        const response = await fetch(`/api/agenda/documents?agendaId=${selectedAgenda.id}`, {
-          signal: abortController.signal
-        });
-        
-        if (response.ok) {
-          const docs = await response.json();
-          console.log('✅ Fetched documents:', docs);
-          setDocuments(docs);
-        } else {
-          console.error('❌ Failed to fetch documents');
-          setDocuments([]);
-        }
-      } catch (error) {
-        if (error.name !== 'AbortError') {
-          console.error('❌ Error fetching documents:', error);
-          setDocuments([]);
-        }
-      }
-    };
-
-    fetchDocuments();
-
-    // Cleanup function
-    return () => {
-      abortController.abort();
-    };
-  }, [selectedAgenda]);
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedAgenda || !event.target.files?.length) return;
-
-    const file = event.target.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('agendaId', selectedAgenda.id);
-    formData.append('name', file.name);
-
-    try {
-      setIsUploading(true);
-      console.log('🔄 Uploading file:', file.name);
-      
-      const response = await fetch('/api/agenda/documents', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        const newDoc = await response.json();
-        console.log('✅ File uploaded:', newDoc);
-        
-        setDocuments(prev => [...prev, newDoc]);
-        event.target.value = '';
-        
-        // Update the selected agenda to reflect new document count
-        const updatedAgenda = { 
-          ...selectedAgenda,
-          documents: [...(selectedAgenda.documents || []), newDoc]
-        };
-        setSelectedAgenda(updatedAgenda);
-        
-        // Also update the agenda list
-        setAgenda(prev => prev.map(agendaItem => 
-          agendaItem.id === selectedAgenda.id ? updatedAgenda : agendaItem
-        ));
-        
-        alert('File uploaded successfully!');
-      } else {
-        const error = await response.json();
-        console.error('❌ Upload failed:', error);
-        alert(`Upload failed: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('❌ Error uploading file:', error);
-      alert('Failed to upload file. Please try again.');
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const handleDeleteDocument = async (documentId: string) => {
-    if (!confirm('Are you sure you want to delete this document?')) return;
-
-    try {
-      console.log('🔄 Deleting document:', documentId);
-      const response = await fetch(`/api/agenda/documents?documentId=${documentId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        console.log('✅ Document deleted');
-        setDocuments(prev => prev.filter(doc => doc.id !== documentId));
-        
-        // Update the selected agenda to reflect document removal
-        if (selectedAgenda) {
-          const updatedAgenda = {
-            ...selectedAgenda,
-            documents: (selectedAgenda.documents || []).filter(doc => doc.id !== documentId)
-          };
-          setSelectedAgenda(updatedAgenda);
-          
-          // Also update the agenda list
-          setAgenda(prev => prev.map(agendaItem => 
-            agendaItem.id === selectedAgenda.id ? updatedAgenda : agendaItem
-          ));
-        }
-        
-        alert('Document deleted successfully!');
-      } else {
-        const error = await response.json();
-        console.error('❌ Delete failed:', error);
-        alert(`Delete failed: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('❌ Failed to delete document:', error);
-      alert('Failed to delete document');
-    }
-  };
+  }, [isDocumentViewerOpen, currentContentIndex, documentContents, selectedAgenda, agenda]);
 
   const handleDownloadDocument = async (document: AgendaDocument) => {
     try {
@@ -568,15 +659,6 @@ const SingleMeeting: React.FC = () => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString: string): string => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch (error) {
-      return 'Invalid date';
-    }
   };
 
   const handleEdit = () => {
@@ -613,168 +695,313 @@ const SingleMeeting: React.FC = () => {
     }
   };
 
-  const getStatusIcon = (status: string | null | undefined) => {
-    if (!status) return Clock;
+  const handleAgendaUpdate = (updatedAgenda: Agenda) => {
+    console.log('🔄 Updating agenda in state:', updatedAgenda);
     
-    const statusIcons: { [key: string]: any } = {
-      'scheduled': Clock,
-      'confirmed': CheckCircle,
-      'in progress': Loader2,
-      'completed': CheckCircle,
-      'cancelled': XCircle,
-      'postponed': Clock,
-      'draft': FileText
-    };
+    // Update agenda list
+    setAgenda(prev => prev.map(agendaItem => 
+      agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
+    ));
     
-    const normalizedStatus = status.toLowerCase();
-    return statusIcons[normalizedStatus] || Clock;
-  };
-
-  const getStatusColor = (status: string | null | undefined) => {
-    if (!status) return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+    // Update selected agenda if it's the one being edited
+    if (selectedAgenda?.id === updatedAgenda.id) {
+      setSelectedAgenda(updatedAgenda);
+    }
     
-    const statusColors: { [key: string]: string } = {
-      'scheduled': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
-      'confirmed': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-      'in progress': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
-      'completed': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-      'cancelled': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
-      'postponed': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-      'draft': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-    };
-    
-    const normalizedStatus = status.toLowerCase();
-    return statusColors[normalizedStatus] || 'bg-gray-100 text-gray-800';
-  };
-
-  const formatMeetingDate = (dateString: string, includeTime: boolean = true) => {
-    try {
-      const date = new Date(dateString);
-      return formatSystemDate(date, includeTime);
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return 'Invalid date';
+    // Also update the meeting data
+    if (meeting) {
+      setMeeting(prev => prev ? {
+        ...prev,
+        agenda: prev.agenda ? prev.agenda.map(agendaItem => 
+          agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
+        ) : [updatedAgenda]
+      } : null);
     }
   };
 
+  // Action Cards Configuration
+  const actionCards = [
+    {
+      id: 'participants',
+      title: 'Manage Participants',
+      description: 'Add, remove, and track RSVP status',
+      icon: Users,
+      color: 'blue',
+      onClick: () => setIsParticipantsSlideOverOpen(true)
+    },
+    {
+      id: 'agenda',
+      title: 'Add Agenda Item',
+      description: 'Create new agenda items and upload documents',
+      icon: BookOpen,
+      color: 'green',
+      onClick: () => setIsAgendaSlideOverOpen(true)
+    },
+    {
+      id: 'documents',
+      title: 'View Documents',
+      description: 'Browse all meeting documents',
+      icon: File,
+      color: 'purple',
+      onClick: () => {
+        if (allDocuments.length > 0) {
+          openDocumentViewer();
+        }
+      },
+      disabled: allDocuments.length === 0
+    }
+  ];
+
   // Render Document Viewer
   const renderDocumentViewer = () => {
-    if (!isDocumentViewerOpen || !selectedDocument) return null;
+    if (!isDocumentViewerOpen || !selectedAgenda || documentContents.length === 0) return null;
 
-    const isImage = selectedDocument.file_type === 'image';
-    const isPDF = selectedDocument.file_type === 'pdf';
+    const currentContent = documentContents[currentContentIndex];
 
     return (
-      <div className="fixed inset-0 z-50 flex">
-        {/* Backdrop */}
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-75 transition-opacity"
-          onClick={closeDocumentViewer}
-        />
-        
-        {/* Document Viewer Panel - Takes half screen on the right */}
-        <div className="fixed right-0 top-0 h-full w-1/2 bg-white dark:bg-gray-900 shadow-2xl flex flex-col">
+      <div className="fixed inset-0 z-50 flex bg-white dark:bg-gray-900">
+        {/* Left Panel - Meeting & Agenda Info (30%) */}
+        <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Meeting Documents
+              </h2>
+              <button
+                onClick={closeDocumentViewer}
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              {meeting?.name}
+            </p>
+          </div>
+
+          {/* Current Agenda Info */}
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+              Current Agenda
+            </h3>
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              {selectedAgenda.name}
+            </p>
+            {selectedAgenda.description && (
+              <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                {selectedAgenda.description}
+              </p>
+            )}
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                onClick={() => navigateAgenda('prev')}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Prev Agenda
+              </button>
+              <button
+                onClick={() => navigateAgenda('next')}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                Next Agenda
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          {/* Agenda List */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4">
+              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+                Meeting Agenda ({agenda.length})
+              </h4>
+              <div className="space-y-2">
+                {agenda.map((agendaItem, index) => (
+                  <div
+                    key={agendaItem.id}
+                    className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                      selectedAgenda.id === agendaItem.id
+                        ? 'bg-blue-100 border border-blue-300 dark:bg-blue-900 dark:border-blue-700'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                    onClick={() => {
+                      setSelectedAgenda(agendaItem);
+                      setCurrentContentIndex(0);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                          #{index + 1}
+                        </span>
+                        <span className={`text-sm font-medium ${
+                          selectedAgenda.id === agendaItem.id
+                            ? 'text-blue-900 dark:text-blue-100'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}>
+                          {agendaItem.name}
+                        </span>
+                      </div>
+                      {agendaItem.documents && agendaItem.documents.length > 0 && (
+                        <span className="text-xs bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
+                          {agendaItem.documents.length}
+                        </span>
+                      )}
+                    </div>
+                    {selectedAgenda.id === agendaItem.id && (
+                      <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+                        ✓ Currently viewing
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Document List for Current Agenda */}
+          <div className="border-t border-gray-200 dark:border-gray-700">
+            <div className="p-4">
+              <h4 className="font-medium text-gray-900 dark:text-white mb-3">
+                Documents in this Agenda ({documentContents.length})
+              </h4>
+              <div className="space-y-2">
+                {documentContents.map((content, index) => (
+                  <div
+                    key={content.id}
+                    className={`p-2 rounded cursor-pointer transition-colors ${
+                      currentContentIndex === index
+                        ? 'bg-green-100 border border-green-300 dark:bg-green-900 dark:border-green-700'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                    onClick={() => setCurrentContentIndex(index)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileIcon 
+                        fileType={content.document.file_type} 
+                        className="w-4 h-4 text-gray-400" 
+                      />
+                      <span className={`text-sm truncate ${
+                        currentContentIndex === index
+                          ? 'text-green-900 dark:text-green-100 font-medium'
+                          : 'text-gray-700 dark:text-gray-300'
+                      }`}>
+                        {content.document.name}
+                      </span>
+                    </div>
+                    {currentContentIndex === index && (
+                      <div className="mt-1 text-xs text-green-600 dark:text-green-400">
+                        ✓ Currently viewing
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Panel - Document Content (70%) */}
+        <div className="flex-1 flex flex-col">
+          {/* Document Header */}
+          <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <FileIcon fileType={selectedDocument.file_type} className="w-5 h-5 text-blue-500 flex-shrink-0" />
+              <FileIcon 
+                fileType={currentContent.document.file_type} 
+                className="w-5 h-5 text-blue-500 flex-shrink-0" 
+              />
               <div className="min-w-0 flex-1">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
-                  {selectedDocument.name}
+                  {currentContent.document.name}
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatFileSize(selectedDocument.file_size)} • {currentDocumentIndex + 1} of {allDocuments.length}
+                  {formatFileSize(currentContent.document.file_size)} • 
+                  Document {currentContentIndex + 1} of {documentContents.length} • 
+                  Agenda: {currentContent.agendaName}
                 </p>
               </div>
             </div>
             
             <div className="flex items-center gap-2 flex-shrink-0">
-              {/* Navigation Controls */}
-              <div className="flex items-center gap-1 mr-4">
+              {/* Search */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Search in document..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded text-sm dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                />
                 <button
-                  onClick={() => navigateDocument('prev')}
-                  disabled={allDocuments.length <= 1}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Previous document"
+                  onClick={handleSearch}
+                  disabled={isSearching}
+                  className="p-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Navigation */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => navigateContent('prev')}
+                  disabled={documentContents.length <= 1}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <span className="text-sm text-gray-500 dark:text-gray-400 mx-1">
-                  {currentDocumentIndex + 1} / {allDocuments.length}
+                  {currentContentIndex + 1} / {documentContents.length}
                 </span>
                 <button
-                  onClick={() => navigateDocument('next')}
-                  disabled={allDocuments.length <= 1}
-                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Next document"
+                  onClick={() => navigateContent('next')}
+                  disabled={documentContents.length <= 1}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>
               </div>
 
               {/* View Controls */}
-              <div className="flex items-center gap-1 mr-4">
-                {isImage && (
-                  <>
-                    <button
-                      onClick={handleZoomOut}
-                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                      title="Zoom out"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </button>
-                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {Math.round(zoomLevel * 100)}%
-                    </span>
-                    <button
-                      onClick={handleZoomIn}
-                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                      title="Zoom in"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleResetZoom}
-                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                      title="Reset zoom"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleRotate}
-                      className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                      title="Rotate"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </button>
-                  </>
-                )}
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={handleFullscreen}
+                  onClick={handleZoomOut}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  title="Fullscreen"
                 >
-                  <Maximize2 className="w-4 h-4" />
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {Math.round(zoomLevel * 100)}%
+                </span>
+                <button
+                  onClick={handleZoomIn}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleResetZoom}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <RotateCcw className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Action Buttons */}
+              {/* Actions */}
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => handleDownloadDocument(selectedDocument)}
+                  onClick={() => handleDownloadDocument(currentContent.document)}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  title="Download"
                 >
                   <Download className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={closeDocumentViewer}
+                  onClick={handleFullscreen}
                   className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  title="Close"
                 >
-                  <X className="w-5 h-5" />
+                  <Maximize2 className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -783,231 +1010,60 @@ const SingleMeeting: React.FC = () => {
           {/* Document Content */}
           <div 
             id="document-viewer-content"
-            className="flex-1 bg-gray-100 dark:bg-gray-800 overflow-auto flex items-center justify-center p-4"
+            className="flex-1 bg-gray-50 dark:bg-gray-800 overflow-auto relative"
           >
-            {isImage ? (
-              <img
-                src={selectedDocument.file_url}
-                alt={selectedDocument.name}
-                className="max-w-full max-h-full object-contain transition-transform duration-200"
-                style={{
-                  transform: `scale(${zoomLevel}) rotate(${rotation}deg)`,
-                  cursor: zoomLevel > 1 ? 'grab' : 'default'
-                }}
-                onMouseDown={(e) => {
-                  if (zoomLevel > 1) {
-                    const img = e.currentTarget;
-                    let isDragging = false;
-                    let startX = e.clientX;
-                    let startY = e.clientY;
-                    let scrollLeft = img.parentElement?.scrollLeft || 0;
-                    let scrollTop = img.parentElement?.scrollTop || 0;
-
-                    const handleMouseMove = (e: MouseEvent) => {
-                      if (!isDragging) return;
-                      const x = e.clientX;
-                      const y = e.clientY;
-                      const walkX = (startX - x) * 2;
-                      const walkY = (startY - y) * 2;
-                      
-                      if (img.parentElement) {
-                        img.parentElement.scrollLeft = scrollLeft + walkX;
-                        img.parentElement.scrollTop = scrollTop + walkY;
-                      }
-                    };
-
-                    const handleMouseUp = () => {
-                      isDragging = false;
-                      document.removeEventListener('mousemove', handleMouseMove);
-                      document.removeEventListener('mouseup', handleMouseUp);
-                    };
-
-                    isDragging = true;
-                    document.addEventListener('mousemove', handleMouseMove);
-                    document.addEventListener('mouseup', handleMouseUp);
-                  }
-                }}
-              />
-            ) : isPDF ? (
-              <iframe
-                src={selectedDocument.file_url}
-                className="w-full h-full border-0"
-                title={selectedDocument.name}
-              />
-            ) : (
-              <div className="text-center">
-                <FileIcon fileType={selectedDocument.file_type} className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  Preview not available
-                </p>
-                <p className="text-gray-500 dark:text-gray-400 mb-4">
-                  This file type cannot be previewed in the browser.
-                </p>
-                <button
-                  onClick={() => handleDownloadDocument(selectedDocument)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors mx-auto"
-                >
-                  <Download className="w-4 h-4" />
-                  Download to view
-                </button>
+            {isConverting ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto mb-4" />
+                  <p className="text-gray-600 dark:text-gray-400">Converting document to readable format...</p>
+                </div>
               </div>
+            ) : (
+              <div 
+                id="document-content"
+                className="p-8 max-w-4xl mx-auto bg-white dark:bg-gray-900 shadow-lg min-h-full"
+                style={{
+                  transform: `scale(${zoomLevel})`,
+                  transformOrigin: 'top center'
+                }}
+                dangerouslySetInnerHTML={{ __html: currentContent.htmlContent }}
+              />
             )}
           </div>
 
-          {/* Footer */}
+          {/* Footer Navigation */}
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-            <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-              <div>
-                Uploaded by {selectedDocument.uploaded_by_name || 'Unknown'} • {formatDate(selectedDocument.uploaded_at)}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Use ↑↓ arrows to navigate agendas • ←→ arrows to navigate documents
               </div>
-              <div className="flex items-center gap-4">
-                <span>Use arrow keys to navigate</span>
-                <span>ESC to close</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Add detailed meeting information display
-  const renderMeetingDetails = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-4">Meeting Information</h3>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Meeting Type</label>
-            <p className="text-sm text-gray-900 dark:text-white mt-1">{meeting.type}</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Location</label>
-            <div className="flex items-center mt-1">
-              <MapPin className="h-4 w-4 text-gray-400 mr-2" />
-              <p className="text-sm text-gray-900 dark:text-white">{meeting.location}</p>
-            </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Duration</label>
-            <div className="flex items-center mt-1">
-              <Clock className="h-4 w-4 text-gray-400 mr-2" />
-              <p className="text-sm text-gray-900 dark:text-white">{meeting.period} minutes</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-4">People</h3>
-        <div className="space-y-4">
-          {meeting.chair_name && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Chair Person</label>
-              <div className="flex items-center mt-1">
-                <User className="h-4 w-4 text-gray-400 mr-2" />
-                <div>
-                  <p className="text-sm text-gray-900 dark:text-white">{meeting.chair_name}</p>
-                  {meeting.chair_role && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{meeting.chair_role}</p>
-                  )}
-                  {meeting.chair_email && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{meeting.chair_email}</p>
-                  )}
+              
+              {documentContents.length > 1 && (
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => navigateContent('prev')}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous Document
+                  </button>
+                  
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    Document {currentContentIndex + 1} of {documentContents.length}
+                  </span>
+                  
+                  <button
+                    onClick={() => navigateContent('next')}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                  >
+                    Next Document
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
-          )}
-          {meeting.participants && meeting.participants.length > 0 && (
-            <div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Participants ({meeting.participants.length})
-              </label>
-              <div className="mt-2 space-y-2">
-                {meeting.participants.slice(0, 3).map((participant) => (
-                  <div key={participant.id} className="flex items-center">
-                    <Users className="h-4 w-4 text-gray-400 mr-2" />
-                    <div>
-                      <p className="text-sm text-gray-900 dark:text-white">{participant.name}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{participant.role}</p>
-                    </div>
-                  </div>
-                ))}
-                {meeting.participants.length > 3 && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    +{meeting.participants.length - 3} more participants
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  // Render documents for an agenda item
-  const renderAgendaDocuments = (agendaItem: Agenda) => {
-    if (!agendaItem.documents || agendaItem.documents.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
-        <div className="flex items-center gap-2 mb-2">
-          <FileText className="h-4 w-4 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Documents</span>
-        </div>
-        <div className="space-y-2">
-          {agendaItem.documents.map((document) => (
-            <div
-              key={document.id}
-              className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
-              onClick={() => openDocumentViewer(document)}
-            >
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <FileIcon fileType={document.file_type} className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {document.name}
-                  </p>
-                  <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span>{formatFileSize(document.file_size)}</span>
-                    <span>•</span>
-                    <span>{formatDate(document.uploaded_at)}</span>
-                    {document.uploaded_by_name && (
-                      <>
-                        <span>•</span>
-                        <span>By {document.uploaded_by_name}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openDocumentViewer(document);
-                  }}
-                  className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-                  title="View document"
-                >
-                  <Eye className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadDocument(document);
-                  }}
-                  className="p-1 text-gray-400 hover:text-green-600 dark:text-gray-500 dark:hover:text-green-400 transition-colors"
-                  title="Download document"
-                >
-                  <Download className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ))}
+          </div>
         </div>
       </div>
     );
@@ -1047,13 +1103,11 @@ const SingleMeeting: React.FC = () => {
     return null;
   }
 
-  const StatusIcon = getStatusIcon(meeting.status);
-
   return (
     <div className="w-full p-4 md:p-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Meeting Details</h2>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Details</h2>
         <nav>
           <ol className="flex items-center gap-1.5">
             <li>
@@ -1065,160 +1119,209 @@ const SingleMeeting: React.FC = () => {
                 Back to Calendar
               </button>
             </li>
-            <li className="text-sm text-gray-800 dark:text-white/90">Meeting Details</li>
+            <li className="text-sm text-gray-800 dark:text-white/90">Details</li>
           </ol>
         </nav>
       </div>
 
-      {/* Meeting Header Card */}
-      <div className="flex flex-col justify-between gap-6 rounded-2xl border border-gray-200 bg-white px-6 py-5 sm:flex-row sm:items-center dark:border-gray-800 dark:bg-white/3 mb-6">
-        <div className="flex flex-col gap-2.5 divide-gray-300 sm:flex-row sm:divide-x dark:divide-gray-700">
-          <div className="flex items-center gap-2 sm:pr-3">
-            <span className="text-base font-medium text-gray-700 dark:text-gray-400">
-              Meeting: {meeting.name}
-            </span>
-            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusColor(meeting.status)}`}>
-              <StatusIcon className="h-3 w-3 mr-1" />
-              {meeting.status}
-            </span>
-          </div>
-          <p className="text-sm text-gray-500 sm:pl-3 dark:text-gray-400">
-            Date: {formatMeetingDate(meeting.start_at, true)}
-          </p>
-        </div>
-        
-        <div className="flex gap-3">
-          <button
-            onClick={handleEdit}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            <Edit className="h-4 w-4" />
-            Edit Meeting
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:bg-gray-400 transition-colors"
-          >
-            {isDeleting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-            Delete
-          </button>
-        </div>
+      
+
+      {/* Meeting Details */}
+      <MeetingDetails meeting={meeting} onEdit={handleEdit} />
+
+      {/* Meeting Invitees */}
+      <MeetingInvitees meeting={meeting} />
+
+      {/* Action Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        {actionCards.map((card) => {
+          const Icon = card.icon;
+          const colorClasses = {
+            blue: 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800',
+            green: 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800',
+            purple: 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800',
+          };
+          const iconColors = {
+            blue: 'text-blue-600 dark:text-blue-400',
+            green: 'text-green-600 dark:text-green-400',
+            purple: 'text-purple-600 dark:text-purple-400',
+          };
+
+          return (
+            <button
+              key={card.id}
+              onClick={card.onClick}
+              disabled={card.disabled}
+              className={`
+                p-6 rounded-xl border-2 text-left transition-all duration-200 hover:shadow-md
+                ${colorClasses[card.color as keyof typeof colorClasses]}
+                ${card.disabled 
+                  ? 'opacity-50 cursor-not-allowed' 
+                  : 'hover:scale-105 cursor-pointer'
+                }
+              `}
+            >
+              <div className="flex items-start gap-4">
+                <div className={`p-3 rounded-lg ${colorClasses[card.color as keyof typeof colorClasses]}`}>
+                  <Icon className={`w-6 h-6 ${iconColors[card.color as keyof typeof iconColors]}`} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                    {card.title}
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {card.description}
+                  </p>
+                  {card.disabled && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      No documents available
+                    </p>
+                  )}
+                </div>
+                <Plus className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Detailed Meeting Information */}
-      {renderMeetingDetails()}
+      {/* Meeting Agenda */}
+      <MeetingAgenda
+        meetingId={meetingId}
+        agenda={agenda}
+        selectedAgenda={selectedAgenda}
+        onAgendaSelect={setSelectedAgenda}
+        onAgendaUpdate={handleAgendaUpdate}
+        onAgendaAdded={refreshMeetingData}
+        onDocumentView={openDocumentViewer}
+        onDocumentDownload={handleDownloadDocument}
+      />
 
-      {/* Quick Add Agenda */}
-      <div className="mb-6">
-        <QuickAddAgenda 
-          meetingId={meetingId} 
-          onAgendaAdded={handleAgendaAdded} 
-        />
-      </div>
-
-      {/* Agenda Section - Full Width */}
-      <div className="w-full">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-white/90">Meeting Agenda</h2>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              {agenda.length} item{agenda.length !== 1 ? 's' : ''}
-            </div>
-          </div>
-
-          {agenda.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400 mb-2">No agenda items yet</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500 mb-4">
-                Create your first agenda item to get started
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {agenda.map((agendaItem) => (
-                <div
-                  key={agendaItem.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-all ${
-                    selectedAgenda?.id === agendaItem.id
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-700'
-                      : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                  }`}
-                  onClick={() => setSelectedAgenda(agendaItem)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                          #{agendaItem.sort_order}
-                        </span>
-                        <h3 className="font-medium text-gray-900 dark:text-white">
-                          {agendaItem.name}
-                        </h3>
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs ${getStatusColor(agendaItem.status)}`}>
-                          {agendaItem.status}
-                        </span>
-                        {agendaItem.cabinet_approval_required && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
-                            Cabinet Approval
-                          </span>
-                        )}
-                      </div>
-                      {agendaItem.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
-                          {agendaItem.description}
-                        </p>
-                      )}
-                      {agendaItem.presenter_id && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Presenter: {agendaItem.presenter_id}
-                        </p>
-                      )}
-                      
-                      {/* Render documents for this agenda item */}
-                      {renderAgendaDocuments(agendaItem)}
+      {/* Participants Slide-over */}
+      {isParticipantsSlideOverOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div className="absolute inset-0 overflow-hidden">
+            {/* Background overlay */}
+            <div 
+              className="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={() => setIsParticipantsSlideOverOpen(false)}
+            />
+            
+            {/* Slide-over panel */}
+            <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex">
+              <div className="relative w-screen max-w-2xl">
+                <div className="h-full flex flex-col bg-white dark:bg-gray-900 shadow-xl">
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                        Meeting Participants
+                      </h2>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {meeting?.name}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditAgenda(agendaItem);
+                    <button
+                      onClick={() => setIsParticipantsSlideOverOpen(false)}
+                      className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="p-6">
+                      <MeetingParticipants 
+                        meetingId={parseInt(meetingId)} 
+                        onParticipantsUpdate={(updatedParticipants) => {
+                          if (meeting) {
+                            setMeeting({
+                              ...meeting,
+                              participants: updatedParticipants
+                            });
+                          }
                         }}
-                        className="p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-colors"
-                        title="Edit agenda"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      {selectedAgenda?.id === agendaItem.id && (
-                        <CheckCircle2 className="h-5 w-5 text-blue-500 flex-shrink-0" />
-                      )}
+                      />
                     </div>
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Agenda Slide-over */}
+      {isAgendaSlideOverOpen && (
+        <AgendaSlideOver
+          isOpen={isAgendaSlideOverOpen}
+          onClose={() => setIsAgendaSlideOverOpen(false)}
+          meetingId={meetingId}
+          onAgendaAdded={refreshMeetingData}
+        />
+      )}
 
       {/* Document Viewer */}
       {renderDocumentViewer()}
 
-      {/* Agenda Slide Over for Detailed Editing */}
-      <AgendaSlideOver
-        agenda={editingAgenda}
-        isOpen={isAgendaSlideOverOpen}
-        onClose={() => {
-          setIsAgendaSlideOverOpen(false);
-          setEditingAgenda(null);
-        }}
-        onSave={handleAgendaUpdate}
-      />
+      {/* Add CSS for document styling */}
+      <style jsx global>{`
+        .document-content {
+          line-height: 1.6;
+          color: #374151;
+        }
+        .document-content h1, 
+        .document-content h2, 
+        .document-content h3, 
+        .document-content h4 {
+          margin: 1.5em 0 0.5em 0;
+          color: #111827;
+        }
+        .document-content p {
+          margin: 1em 0;
+        }
+        .document-content img {
+          max-width: 100%;
+          height: auto;
+        }
+        .search-highlight {
+          background-color: yellow;
+          color: black;
+        }
+        .pdf-page {
+          margin: 2em 0;
+          border: 1px solid #e5e7eb;
+          padding: 1em;
+          background: white;
+        }
+        .page-number {
+          text-align: center;
+          font-size: 0.875em;
+          color: #6b7280;
+          margin-bottom: 0.5em;
+        }
+        .image-document {
+          text-align: center;
+        }
+        .image-caption {
+          margin-top: 1em;
+          font-style: italic;
+          color: #6b7280;
+        }
+        .word-content {
+          font-family: 'Times New Roman', serif;
+        }
+        .dark .document-content {
+          color: #d1d5db;
+        }
+        .dark .document-content h1,
+        .dark .document-content h2,
+        .dark .document-content h3,
+        .dark .document-content h4 {
+          color: #f9fafb;
+        }
+      `}</style>
     </div>
   );
 };
