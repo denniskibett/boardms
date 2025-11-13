@@ -146,12 +146,14 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
     }
   }, [isOpen, agenda?.id]);
 
-  // Update form when agenda changes
+  // Update form when agenda changes - FIXED TO HANDLE ministry_id AND presenter_id
   useEffect(() => {
     console.log('🔍 DEBUG: Agenda prop changed:', { 
       agenda, 
       hasId: agenda?.id,
-      meetingId: agenda?.meeting_id 
+      meetingId: agenda?.meeting_id,
+      ministry_id: agenda?.ministry_id,
+      presenter_id: agenda?.presenter_id
     });
 
     if (agenda) {
@@ -168,13 +170,17 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         }
       }
 
+      // Convert IDs to strings for select inputs
+      const ministryId = agenda.ministry_id ? agenda.ministry_id.toString() : '';
+      const presenterId = agenda.presenter_id ? agenda.presenter_id.toString() : '';
+
       const newFormData = {
-        name: agenda.name || '',
+        name: agenda.name || agenda.title || '',
         description: description,
         status: agenda.status || 'draft',
-        sort_order: agenda.sort_order || 1,
-        presenter_id: agenda.presenter_id || '',
-        ministry_id: agenda.ministry_id || '',
+        sort_order: agenda.sort_order || agenda.order || 1,
+        presenter_id: presenterId,
+        ministry_id: ministryId,
         cabinet_approval_required: agenda.cabinet_approval_required || false
       };
 
@@ -272,11 +278,11 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       const url = agenda?.id ? `/api/agenda/${agenda.id}` : '/api/agenda';
       const method = agenda?.id ? 'PUT' : 'POST';
 
-      // Get presenter name from selected user for both fields
-      const selectedUser = users.find(user => user.id === formData.presenter_id);
-      const presenter_id = formData.presenter_id || null;
+      // Convert string IDs back to integers for database
+      const presenterId = formData.presenter_id ? parseInt(formData.presenter_id) : null;
+      const ministryId = formData.ministry_id ? parseInt(formData.ministry_id) : null;
 
-      // Prepare data with both presenter_id and presenter_name for compatibility
+      // Prepare data with proper integer IDs
       const submitData: any = {
         name: formData.name.trim(),
         description: formData.description.trim() || '',
@@ -284,9 +290,9 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         sort_order: parseInt(formData.sort_order.toString()),
         cabinet_approval_required: Boolean(formData.cabinet_approval_required),
         meeting_id: agenda.meeting_id,
-        // Send both fields for maximum compatibility
-        presenter_id: presenter_id,
-        ministry_id: formData.ministry_id || null,
+        // Convert string IDs to integers for database
+        presenter_id: presenterId,
+        ministry_id: ministryId,
         // Required fields for backend schema
         memo_id: null,
         created_by: null
@@ -297,7 +303,9 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         url, 
         agendaId: agenda?.id,
         meetingId: agenda?.meeting_id,
-        submitData
+        submitData,
+        presenter_id: submitData.presenter_id,
+        ministry_id: submitData.ministry_id
       });
 
       setDebugInfo(prev => ({

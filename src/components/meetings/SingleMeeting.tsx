@@ -28,6 +28,7 @@ import MeetingAgenda from './MeetingAgenda';
 import MeetingParticipants from '@/components/meetings/MeetingParticipants';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
 import FileIcon from '@/components/agenda/FileIcon';
+import OpenBook from '@/components/agenda/OpenBook';
 
 interface Meeting {
   id: string;
@@ -759,6 +760,7 @@ const SingleMeeting: React.FC = () => {
     const currentContent = documentContents[currentContentIndex];
 
     return (
+      
       <div className="fixed inset-0 z-50 flex bg-white dark:bg-gray-900">
         {/* Left Panel - Meeting & Agenda Info (30%) */}
         <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -810,6 +812,8 @@ const SingleMeeting: React.FC = () => {
               </button>
             </div>
           </div>
+
+          
 
           {/* Agenda List */}
           <div className="flex-1 overflow-y-auto">
@@ -1185,8 +1189,13 @@ const SingleMeeting: React.FC = () => {
         })}
       </div>
 
+       <div className="h-screen"> 
+          {/* Ensure full height */}
+            <OpenBook meetingId={meetingId} />
+          </div>
+
       {/* Meeting Agenda */}
-      <MeetingAgenda
+      {/* <MeetingAgenda
         meetingId={meetingId}
         agenda={agenda}
         selectedAgenda={selectedAgenda}
@@ -1195,7 +1204,7 @@ const SingleMeeting: React.FC = () => {
         onAgendaAdded={refreshMeetingData}
         onDocumentView={openDocumentViewer}
         onDocumentDownload={handleDownloadDocument}
-      />
+      /> */}
 
       {/* Participants Slide-over */}
       {isParticipantsSlideOverOpen && (
