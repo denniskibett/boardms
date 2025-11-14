@@ -2,11 +2,11 @@
 import { useState, useEffect } from 'react';
 
 export interface Category {
-  id: string;
+  id: number;
   name: string;
   type: string;
+  icon?: string;
   colour?: string;
-  description?: string;
   created_at: string;
   updated_at: string;
 }
@@ -24,20 +24,20 @@ export function useCategories(type?: string) {
     try {
       setLoading(true);
       setError(null);
-      
+
       const url = type ? `/api/categories?type=${type}` : '/api/categories';
       const response = await fetch(url);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch categories: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      
+
       if (Array.isArray(data)) {
         setCategories(data);
       } else {
-        throw new Error('Invalid data format received');
+        throw new Error('Invalid data format received from API');
       }
     } catch (err) {
       console.error('Error fetching categories:', err);
@@ -48,20 +48,22 @@ export function useCategories(type?: string) {
     }
   };
 
-  const refetch = () => {
-    fetchCategories();
-  };
+  const refetch = () => fetchCategories();
 
-  // Helper methods for common category types
-  const meetingTypes = categories.filter(cat => cat.type === 'meeting_status');
-  const locations = categories.filter(cat => cat.type === 'location');
-  const meetingStatuses = categories.filter(cat => cat.type === 'meeting_status');
+  // Common filtered sets
+  const meetingTypes = categories.filter(c => c.type === 'meeting_type');
+  const meetingStatuses = categories.filter(c => c.type === 'meeting_status');
+  const decisionStatuses = categories.filter(c => c.type === 'decision_status');
+  const locations = categories.filter(c => c.type === 'location');
+  const resourceTypes = categories.filter(c => c.type === 'resource_type');
 
   return {
     categories,
     meetingTypes,
-    locations,
     meetingStatuses,
+    decisionStatuses,
+    locations,
+    resourceTypes,
     loading,
     error,
     refetch

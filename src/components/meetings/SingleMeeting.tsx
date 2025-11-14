@@ -446,18 +446,18 @@ const SingleMeeting: React.FC = () => {
   const refreshMeetingData = async () => {
     try {
       console.log('🔄 Refreshing meeting data...');
-      const meetingResponse = await fetch(`/api/meetings/${meetingId}`);
+      const meetingResponse = await fetch(`/api/meetings/${meetingId}?t=${Date.now()}`); // Cache bust
       
       if (meetingResponse.ok) {
         const meetingData = await meetingResponse.json();
         setMeeting(meetingData);
         
         if (meetingData.agenda) {
-          // Fetch documents for each agenda item
+          // Fetch documents for each agenda item with error handling
           const agendaWithDocuments = await Promise.all(
             meetingData.agenda.map(async (agendaItem: Agenda) => {
               try {
-                const docsResponse = await fetch(`/api/agenda/documents?agendaId=${agendaItem.id}`);
+                const docsResponse = await fetch(`/api/agenda/documents?agendaId=${agendaItem.id}&t=${Date.now()}`);
                 if (docsResponse.ok) {
                   const documents = await docsResponse.json();
                   return { ...agendaItem, documents };
@@ -470,6 +470,14 @@ const SingleMeeting: React.FC = () => {
             })
           );
           setAgenda(agendaWithDocuments);
+          
+          // Update selected agenda if it exists
+          if (selectedAgenda) {
+            const updatedSelected = agendaWithDocuments.find(a => a.id === selectedAgenda.id);
+            if (updatedSelected) {
+              setSelectedAgenda(updatedSelected);
+            }
+          }
         } else {
           setAgenda([]);
         }
