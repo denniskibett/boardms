@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import TodayMeetings from './TodayMeetings';
+import Link from "next/link";
 
 interface Meeting {
   id: string;
@@ -206,9 +207,11 @@ export default function UpcomingMeetings() {
     
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
       {/* Header */}
+      <Link href={`/meetings/${nextMeeting ? nextMeeting.id : ''}`}>
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <TodayMeetings meetings={meetings} />
       </div>
+      </Link>
       
 
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -311,6 +314,7 @@ export default function UpcomingMeetings() {
                 <h4 className="text-lg font-bold text-gray-900 dark:text-white mb-4 border-l-4 border-blue-500 pl-3">
                   Next Meeting
                 </h4>
+                <Link href={`/meetings/${nextMeeting.id}`}>
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
                   <div className="flex flex-col lg:flex-row gap-6">
                     {/* Date Box */}
@@ -396,6 +400,7 @@ export default function UpcomingMeetings() {
                     </div>
                   </div>
                 </div>
+                </Link>
               </div>
             )}
 
@@ -418,95 +423,98 @@ export default function UpcomingMeetings() {
                   </div>
 
                   {/* Regular Meetings */}
+                  
                   <div className="space-y-4">
                     {regularMeetings.map((meeting) => {
                       const { date, time, day, month, weekday } = formatMeetingTime(meeting.start_at);
                       const status = getMeetingStatus(meeting.start_at);
                       
                       return (
-                        <div
-                          key={meeting.id}
-                          className="group p-5 border-2 border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 bg-white dark:bg-gray-800 hover:shadow-md"
-                          style={{
-                            borderLeftColor: meeting.colour || '#3B82F6',
-                            borderLeftWidth: '4px'
-                          }}
-                        >
-                          <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-                            {/* Date Box */}
-                            <div className="flex-shrink-0">
-                              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-3 text-center min-w-[70px]">
-                                <div className="text-lg font-bold text-gray-900 dark:text-white">
-                                  {day}
+                        <Link href={`/meetings/${meeting.id}`} key={meeting.id}>
+                          <div
+                            key={meeting.id}
+                            className="group p-5 border-2 border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 bg-white dark:bg-gray-800 hover:shadow-md"
+                            style={{
+                              borderLeftColor: meeting.colour || '#3B82F6',
+                              borderLeftWidth: '4px'
+                            }}
+                          >
+                            <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                              {/* Date Box */}
+                              <div className="flex-shrink-0">
+                                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-3 text-center min-w-[70px]">
+                                  <div className="text-lg font-bold text-gray-900 dark:text-white">
+                                    {day}
+                                  </div>
+                                  <div className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
+                                    {month}
+                                  </div>
+                                  <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                    {weekday}
+                                  </div>
                                 </div>
-                                <div className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
-                                  {month}
-                                </div>
-                                <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                                  {weekday}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="flex-1">
-                              <div className="flex items-start justify-between mb-3">
-                                <h4 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                  {meeting.name}
-                                </h4>
-                                <span className={`px-3 py-1 text-xs font-bold rounded-full ${status.class}`}>
-                                  {status.label}
-                                </span>
                               </div>
                               
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3 flex-wrap">
-                                  <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
-                                    </svg>
-                                    <span>{time}</span>
-                                  </div>
-                                  <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
-                                  <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                                    </svg>
-                                    <span className="font-medium">{meeting.location}</span>
-                                  </div>
-                                </div>
-                                
-                                {meeting.attendees_count && (
-                                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                      <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
-                                    </svg>
-                                    <span className="font-medium">{meeting.attendees_count} attendees</span>
-                                  </div>
-                                )}
-                                
-                                {meeting.description && (
-                                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
-                                    {meeting.description}
-                                  </p>
-                                )}
-                              </div>
-                              
-                              <div className="flex flex-wrap gap-2 mt-3">
-                                <span 
-                                  className="px-3 py-1 text-sm font-bold text-white rounded-full"
-                                  style={{ backgroundColor: meeting.colour || '#3B82F6' }}
-                                >
-                                  {meeting.type}
-                                </span>
-                                {meeting.committee && (
-                                  <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
-                                    {meeting.committee}
+                              <div className="flex-1">
+                                <div className="flex items-start justify-between mb-3">
+                                  <h4 className="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                    {meeting.name}
+                                  </h4>
+                                  <span className={`px-3 py-1 text-xs font-bold rounded-full ${status.class}`}>
+                                    {status.label}
                                   </span>
-                                )}
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
+                                      </svg>
+                                      <span>{time}</span>
+                                    </div>
+                                    <div className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+                                    <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+                                      </svg>
+                                      <span className="font-medium">{meeting.location}</span>
+                                    </div>
+                                  </div>
+                                  
+                                  {meeting.attendees_count && (
+                                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
+                                      </svg>
+                                      <span className="font-medium">{meeting.attendees_count} attendees</span>
+                                    </div>
+                                  )}
+                                  
+                                  {meeting.description && (
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">
+                                      {meeting.description}
+                                    </p>
+                                  )}
+                                </div>
+                                
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                  <span 
+                                    className="px-3 py-1 text-sm font-bold text-white rounded-full"
+                                    style={{ backgroundColor: meeting.colour || '#3B82F6' }}
+                                  >
+                                    {meeting.type}
+                                  </span>
+                                  {meeting.committee && (
+                                    <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
+                                      {meeting.committee}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       );
                     })}
                   </div>

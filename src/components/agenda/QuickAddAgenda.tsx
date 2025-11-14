@@ -1,7 +1,6 @@
 "use client";
 import React, { useState } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
-import { create } from 'domain';
 
 interface QuickAddAgendaProps {
   meetingId: string;
@@ -26,7 +25,7 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
     try {
       setIsLoading(true);
       
-      // Get the next sort_order directly by fetching current agenda items
+      // Get the next sort_order
       const nextSortOrder = await getNextSortOrder(meetingId);
       
       console.log('🔢 Next sort order calculated:', nextSortOrder);
@@ -43,8 +42,6 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
         cabinet_approval_required: false,
         memo_id: null, 
         created_by: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       };
 
       console.log('🔄 Adding agenda with data:', agendaData);
@@ -67,13 +64,16 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
       console.log('✅ Agenda added successfully:', newAgenda);
 
       // Reset form and close
-      setFormData({
-        name: '',
-      });
+      setFormData({ name: '' });
       setIsOpen(false);
       
-      // Notify parent component
+      // Force refresh by calling the callback - THIS IS KEY
       onAgendaAdded();
+      
+      // Additional force refresh after a short delay
+      setTimeout(() => {
+        onAgendaAdded();
+      }, 500);
       
     } catch (error) {
       console.error('❌ Error adding agenda:', error);
@@ -88,26 +88,19 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
     try {
       console.log('🔄 Fetching current agenda items for meeting:', meetingId);
       
-      const response = await fetch(`/api/agenda?meetingId=${meetingId}`);
+      const response = await fetch(`/api/agenda?meetingId=${meetingId}&t=${Date.now()}`); // Add cache bust
       
       if (response.ok) {
         const agendaItems = await response.json();
         console.log('📋 Current agenda items:', agendaItems);
         
         if (agendaItems.length === 0) {
-          console.log('📝 No existing agenda items, starting with 1');
           return 1;
         }
         
         // Find the highest sort_order
         const maxSortOrder = Math.max(...agendaItems.map((item: any) => item.sort_order || 0));
         const nextSortOrder = maxSortOrder + 1;
-        
-        console.log('🔢 Sort order calculation:', {
-          maxSortOrder,
-          nextSortOrder,
-          totalItems: agendaItems.length
-        });
         
         return nextSortOrder;
       } else {
@@ -116,7 +109,7 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
       }
     } catch (error) {
       console.error('❌ Error getting sort order:', error);
-      return 1; // Default to 1 if there's an error
+      return 1;
     }
   };
 
@@ -136,7 +129,7 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Add Agenda Item
+          Quick Add Agenda Item
         </button>
       </div>
     );
@@ -164,9 +157,6 @@ const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdde
             placeholder="Enter agenda item name"
             autoFocus
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Other details can be added later in the agenda editor
-          </p>
         </div>
 
         <div className="flex gap-3 pt-4">
