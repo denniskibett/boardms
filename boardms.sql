@@ -2,10 +2,10 @@
 -- PostgreSQL database dump
 --
 
-\restrict 7bhHyn3bmyGGKvXR4mVQH7o8xdJY9iyYnHXTsgfN3mlPqueK4M9iCoftabGrdMq
+\restrict 2j3gNbPboEhjeI5oLXy8IWONY1qCJVLAeaECk0rjjvWjkAvimenQRKrcobQz8Gi
 
 -- Dumped from database version 14.19 (Homebrew)
--- Dumped by pg_dump version 14.19 (Homebrew)
+-- Dumped by pg_dump version 14.20 (Homebrew)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -925,6 +925,92 @@ ALTER SEQUENCE public.presidential_signatures_id_seq OWNED BY public.presidentia
 
 
 --
+-- Name: resource_files; Type: TABLE; Schema: public; Owner: admin
+--
+
+CREATE TABLE public.resource_files (
+    id integer NOT NULL,
+    resource_id integer,
+    name character varying(255) NOT NULL,
+    display_name character varying(255),
+    file_type character varying(50),
+    file_url character varying(500),
+    file_size integer,
+    ministry_id integer,
+    uploaded_by integer,
+    uploaded_at timestamp without time zone DEFAULT now(),
+    metadata jsonb,
+    created_at timestamp without time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.resource_files OWNER TO admin;
+
+--
+-- Name: resource_files_id_seq; Type: SEQUENCE; Schema: public; Owner: admin
+--
+
+CREATE SEQUENCE public.resource_files_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.resource_files_id_seq OWNER TO admin;
+
+--
+-- Name: resource_files_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: admin
+--
+
+ALTER SEQUENCE public.resource_files_id_seq OWNED BY public.resource_files.id;
+
+
+--
+-- Name: resources; Type: TABLE; Schema: public; Owner: admin
+--
+
+CREATE TABLE public.resources (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    display_name character varying(255) NOT NULL,
+    resource_type_id integer,
+    year integer NOT NULL,
+    description text,
+    metadata jsonb,
+    created_by integer,
+    created_at timestamp without time zone DEFAULT now(),
+    updated_at timestamp without time zone DEFAULT now()
+);
+
+
+ALTER TABLE public.resources OWNER TO admin;
+
+--
+-- Name: resources_id_seq; Type: SEQUENCE; Schema: public; Owner: admin
+--
+
+CREATE SEQUENCE public.resources_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER TABLE public.resources_id_seq OWNER TO admin;
+
+--
+-- Name: resources_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: admin
+--
+
+ALTER SEQUENCE public.resources_id_seq OWNED BY public.resources.id;
+
+
+--
 -- Name: state_departments; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -1260,6 +1346,20 @@ ALTER TABLE ONLY public.presidential_signatures ALTER COLUMN id SET DEFAULT next
 
 
 --
+-- Name: resource_files id; Type: DEFAULT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resource_files ALTER COLUMN id SET DEFAULT nextval('public.resource_files_id_seq'::regclass);
+
+
+--
+-- Name: resources id; Type: DEFAULT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resources ALTER COLUMN id SET DEFAULT nextval('public.resources_id_seq'::regclass);
+
+
+--
 -- Name: state_departments id; Type: DEFAULT; Schema: public; Owner: postgres
 --
 
@@ -1341,25 +1441,43 @@ COPY public.agencies (id, state_department_id, name, director_general, acronym, 
 --
 
 COPY public.agenda (id, meeting_id, memo_id, name, ministry_id, presenter_id, sort_order, description, status, cabinet_approval_required, created_at, updated_at, created_by) FROM stdin;
-2	1	\N	Infrastructure Development Proposal	\N	\N	2	{"text": "Comprehensive infrastructure development plan..."}	\N	t	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
-3	1	\N	Energy Sector Updates	\N	\N	3	{"text": "Strategy for renewable energy investments..."}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
-4	1	\N	Closing Remarks	\N	\N	4	{"text": "Final wrap-up and resolutions by Chair"}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
-6	1	\N	Infrastructure Development Proposal	\N	\N	2	{"text": "Comprehensive infrastructure development plan..."}	\N	t	2025-11-09 13:45:59.23921	2025-11-09 13:45:59.23921	1
-7	1	\N	Energy Sector Updates	\N	\N	3	{"text": "Strategy for renewable energy investments..."}	\N	f	2025-11-09 13:45:59.23921	2025-11-09 13:45:59.23921	1
-1	1	\N	Opening Remarks	\N	\N	1	{"text": "Session introduction and welcome by Chair"}	\N	f	2025-11-09 13:45:56.236988	2025-11-09 13:45:56.236988	1
 9	1	\N	Hi-Vis Reflector A8	\N	\N	1		draft	f	2025-11-10 16:01:31.09932	2025-11-10 16:01:31.09932	\N
 10	19	\N	Prayers	\N	\N	1		draft	f	2025-11-10 16:03:42.55292	2025-11-10 16:03:42.55292	\N
 11	19	\N	Opening Remarks	\N	\N	2		draft	f	2025-11-10 16:03:55.638011	2025-11-10 16:03:55.638011	\N
 12	19	\N	Agenda 1	\N	\N	3		draft	f	2025-11-10 16:05:02.192119	2025-11-10 16:05:02.192119	\N
 13	19	\N	Agenda 2	\N	\N	4		draft	f	2025-11-10 16:15:15.975807	2025-11-10 16:15:15.975807	\N
 14	19	\N	AOB	\N	\N	5		draft	f	2025-11-10 16:15:25.022071	2025-11-10 16:15:25.022071	\N
-19	16	\N	Agenda 4	4	\N	5		draft	f	2025-11-10 17:02:18.493219	2025-11-10 17:43:09.247972	\N
-16	16	\N	Opening Remarks	18	\N	2		draft	f	2025-11-10 16:31:55.816092	2025-11-10 18:09:31.764575	\N
+24	16	\N	hi	\N	\N	9		draft	f	2025-11-12 16:45:01.902264	2025-11-12 16:45:01.902264	\N
+25	16	\N	Max	\N	\N	10		draft	f	2025-11-12 20:15:49.654	2025-11-12 20:15:49.654	\N
+26	20	\N	good morning	13	31	1		draft	f	2025-11-13 12:53:47.781519	2025-11-13 12:54:09.269852	\N
+27	16	\N	AOB	\N	\N	11		draft	f	2025-11-13 15:06:21.084246	2025-11-13 15:06:21.084246	\N
+28	16	\N	hi	\N	\N	3		draft	f	2025-11-13 16:13:14.47643	2025-11-13 16:13:14.47643	\N
+29	21	\N	Prayers	\N	\N	1		draft	f	2025-11-13 16:35:10.666382	2025-11-13 16:35:10.666382	\N
+30	21	\N	Opening Remarks	\N	\N	2		draft	f	2025-11-13 16:35:29.609971	2025-11-13 16:35:29.609971	\N
+31	16	\N	Agenda 6	\N	\N	13		draft	f	2025-11-13 16:39:03.867316	2025-11-13 16:39:03.867316	\N
+32	16	\N	Noma	\N	\N	14		draft	f	2025-11-13 19:39:27.623286	2025-11-13 19:39:27.623286	\N
 5	14	\N	Opening Remarks	15	315	1	Session introduction and welcome by Chair	draft	f	2025-11-09 13:45:59.23921	2025-11-10 18:50:50.346292	1
 8	14	\N	Closing Remarks	\N	33	4	Final wrap-up and resolutions by Chair	draft	f	2025-11-09 13:45:59.23921	2025-11-10 18:51:03.063865	1
-15	16	\N	Prayers	\N	32	1		draft	f	2025-11-10 16:31:42.711412	2025-11-10 19:30:43.270362	\N
-18	16	\N	Agenda 3	\N	34	4		draft	f	2025-11-10 16:46:17.771428	2025-11-10 19:39:17.593933	\N
+15	16	\N	Prayers	23	\N	1	meeting started at exactly 9am with prayers	confirmed	f	2025-11-10 16:31:42.711412	2025-11-13 19:56:20.216591	\N
+16	16	\N	Edward Kibet	\N	\N	1		approved	f	2025-11-10 16:31:55.816092	2025-11-13 19:59:51.823853	\N
 17	16	\N	Agenda 1	13	3	3		submitted	f	2025-11-10 16:32:02.106407	2025-11-10 20:05:52.810838	\N
+20	16	\N	Agenda 5	9	315	6		draft	f	2025-11-11 23:47:12.875557	2025-11-11 23:47:52.228709	\N
+21	16	\N	Closing Prayers	\N	2	7		draft	f	2025-11-11 23:47:22.600475	2025-11-12 00:20:37.923738	\N
+1	1	\N	Opening Remarks	\N	\N	1	Session introduction and welcome by Chair	draft	f	2025-11-09 13:45:56.236988	2025-11-12 15:40:47.552743	1
+6	1	\N	Infrastructure Development Proposal	\N	\N	2	Comprehensive infrastructure development plan...	draft	t	2025-11-09 13:45:59.23921	2025-11-12 15:40:53.39223	1
+2	1	\N	Infrastructure Development Proposal	\N	\N	2	Comprehensive infrastructure development plan...	draft	t	2025-11-09 13:45:56.236988	2025-11-12 15:40:57.790432	1
+7	1	\N	Energy Sector Updates	\N	\N	3	Strategy for renewable energy investments...	draft	f	2025-11-09 13:45:59.23921	2025-11-12 15:41:02.751339	1
+3	1	\N	Energy Sector Updates	\N	\N	3	Strategy for renewable energy investments...	draft	f	2025-11-09 13:45:56.236988	2025-11-12 15:41:06.61573	1
+4	1	\N	Closing Remarks	\N	\N	4	Final wrap-up and resolutions by Chair	draft	f	2025-11-09 13:45:56.236988	2025-11-12 15:41:10.105063	1
+23	2	\N	Opening Remarks	\N	1	1		draft	f	2025-11-12 15:43:12.732883	2025-11-12 15:43:33.378444	\N
+22	16	\N	hi	10	\N	8		draft	f	2025-11-12 14:58:21.71004	2025-11-13 20:03:47.344296	\N
+18	16	\N	Dennis Kibett	\N	\N	1		confirmed	f	2025-11-10 16:46:17.771428	2025-11-13 21:48:37.381227	\N
+19	16	\N	Agenda 4	4	13	5		draft	f	2025-11-10 17:02:18.493219	2025-11-13 21:50:18.548878	\N
+34	15	\N	Prayers	\N	\N	2		draft	f	2025-11-14 11:24:13.654708	2025-11-14 11:24:13.654708	\N
+33	15	\N	Agenda 1	\N	\N	2		draft	f	2025-11-14 11:17:12.777976	2025-11-14 11:28:52.457944	\N
+35	22	\N	Prayers	\N	\N	1		draft	f	2025-11-14 11:33:27.859976	2025-11-14 11:33:27.859976	\N
+36	22	\N	Opening Remarks	\N	\N	2		draft	f	2025-11-14 11:33:34.058606	2025-11-14 11:33:34.058606	\N
+37	22	\N	Agenda 1	20	41	3		draft	f	2025-11-14 11:33:38.761226	2025-11-14 11:34:35.30354	\N
 \.
 
 
@@ -1370,6 +1488,19 @@ COPY public.agenda (id, meeting_id, memo_id, name, ministry_id, presenter_id, so
 COPY public.agenda_documents (id, agenda_id, name, created_at, file_type, file_url, file_size, uploaded_at, metadata, uploaded_by) FROM stdin;
 1	17	1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	2025-11-10 20:05:44.041677	image	/uploads/agenda_documents/1762794344037-szocdsf33u-1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	16874	2025-11-10 20:05:44.041677+03	{"mimeType": "image/jpeg", "uploadedAt": "2025-11-10T17:05:44.040Z", "uploadedBy": "William Kabogo Gitau", "originalName": "1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg", "fileExtension": "jpg"}	11
 2	17	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx	2025-11-10 22:28:56.342875	word	/uploads/agenda_documents/1762802936338-jmikp2nwaq9-KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	21396	2025-11-10 22:28:56.342875+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-10T19:28:56.342Z", "uploadedBy": "William Kabogo Gitau", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "fileExtension": "docx"}	11
+3	17	Gov Bot .pdf	2025-11-11 16:13:55.138072	pdf	/uploads/agenda_documents/1762866835128-2rlaipm7xhe-Gov_Bot_.pdf	1766032	2025-11-11 16:13:55.138072+03	{"mimeType": "application/pdf", "uploadedAt": "2025-11-11T13:13:55.137Z", "uploadedBy": "William Kabogo Gitau", "originalName": "Gov Bot .pdf", "fileExtension": "pdf"}	11
+4	17	Harlequins Court Residence Security Collections - UPDATED LIST.csv	2025-11-11 16:15:00.218942	other	/uploads/agenda_documents/1762866900201-ztxfwaqc79-Harlequins_Court_Residence_Security_Collections_-_UPDATED_LIST.csv	12270	2025-11-11 16:15:00.218942+03	{"mimeType": "text/csv", "uploadedAt": "2025-11-11T13:15:00.218Z", "uploadedBy": "William Kabogo Gitau", "originalName": "Harlequins Court Residence Security Collections - UPDATED LIST.csv", "fileExtension": "csv"}	11
+5	16	EPERA Visitor & Gate Management System Proposal.pdf	2025-11-11 19:01:30.179279	pdf	/uploads/agenda_documents/1762876890171-er2cjjf3uvk-EPERA_Visitor___Gate_Management_System_Proposal.pdf	136988	2025-11-11 19:01:30.179279+03	{"mimeType": "application/pdf", "uploadedAt": "2025-11-11T16:01:30.178Z", "uploadedBy": "William Kabogo Gitau", "originalName": "EPERA Visitor & Gate Management System Proposal.pdf", "fileExtension": "pdf"}	11
+6	19	Contribution_of_Immigration_and_Citizen_Services_to_DPI_Kenya.pptx	2025-11-11 22:04:28.384818	powerpoint	/uploads/agenda_documents/1762887868372-ihoa4yy8ht9-Contribution_of_Immigration_and_Citizen_Services_to_DPI_Kenya.pptx	30186	2025-11-11 22:04:28.384818+03	{"mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "uploadedAt": "2025-11-11T19:04:28.384Z", "uploadedBy": "William Kabogo Gitau", "originalName": "Contribution_of_Immigration_and_Citizen_Services_to_DPI_Kenya.pptx", "fileExtension": "pptx"}	11
+7	19	Business Operation Manual.docx	2025-11-11 22:10:40.779224	word	/uploads/agenda_documents/1762888240775-kxss7umr6dp-Business_Operation_Manual.docx	23854	2025-11-11 22:10:40.779224+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-11T19:10:40.778Z", "uploadedBy": "William Kabogo Gitau", "originalName": "Business Operation Manual.docx", "fileExtension": "docx"}	11
+8	23	Meeting Mgt.docx	2025-11-12 15:51:29.590956	word	/uploads/agenda_documents/1762951889547-n2f48hh71kh-Meeting_Mgt.docx	8606572	2025-11-12 15:51:29.590956+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-12T12:51:29.590Z", "uploadedBy": "William Kabogo Gitau", "originalName": "Meeting Mgt.docx", "fileExtension": "docx"}	11
+9	23	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx	2025-11-12 15:53:00.857317	word	/uploads/agenda_documents/1762951980851-6tvxfmfz44v-KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	21396	2025-11-12 15:53:00.857317+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-12T12:53:00.854Z", "uploadedBy": "William Kabogo Gitau", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "fileExtension": "docx"}	11
+10	26	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx	2025-11-13 12:54:04.463409	word	/uploads/agenda_documents/1763027644459-3zcc9seeun2-KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	21396	2025-11-13 12:54:04.463409+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-13T09:54:04.463Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "fileExtension": "docx"}	1
+11	16	Integrated_Investment_Loan_System_Proposal.docx	2025-11-13 19:57:58.610829	word	/uploads/agenda_documents/1763053078600-x8g3z87ewzl-Integrated_Investment_Loan_System_Proposal.docx	38866	2025-11-13 19:57:58.610829+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-13T16:57:58.609Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "Integrated_Investment_Loan_System_Proposal.docx", "fileExtension": "docx"}	1
+12	33	Meeting Mgt.docx	2025-11-14 11:18:43.153385	word	/uploads/agenda_documents/1763108323110-j72ttp1rnl-Meeting_Mgt.docx	8606572	2025-11-14 11:18:43.153385+03	{"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-14T08:18:43.152Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "Meeting Mgt.docx", "fileExtension": "docx"}	1
+13	33	1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	2025-11-14 11:28:26.663151	image	/uploads/agenda_documents/1763108906658-z95roc0wx6f-1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg	16874	2025-11-14 11:28:26.663151+03	{"mimeType": "image/jpeg", "uploadedAt": "2025-11-14T08:28:26.662Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "1pU9bhJ1n7D1pOchC8HX3sjPjyQvqQYROnL8cGZe.jpg", "fileExtension": "jpg"}	1
+14	33	Jambojet.com - Itinerary.pdf	2025-11-14 11:28:38.548384	pdf	/uploads/agenda_documents/1763108918512-xeejbq6d1tr-Jambojet.com_-_Itinerary.pdf	361760	2025-11-14 11:28:38.548384+03	{"mimeType": "application/pdf", "uploadedAt": "2025-11-14T08:28:38.530Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "Jambojet.com - Itinerary.pdf", "fileExtension": "pdf"}	1
+15	37	Receipt_TK433995KP.pdf	2025-11-14 11:34:24.715428	pdf	/uploads/agenda_documents/1763109264703-6excjkvagqv-Receipt_TK433995KP.pdf	225479	2025-11-14 11:34:24.715428+03	{"mimeType": "application/pdf", "uploadedAt": "2025-11-14T08:34:24.714Z", "uploadedBy": "H.E. Dr. William Samoei Ruto, C.G.H", "originalName": "Receipt_TK433995KP.pdf", "fileExtension": "pdf"}	1
 \.
 
 
@@ -1494,6 +1625,11 @@ COPY public.categories (id, name, type, icon, colour, created_at, updated_at) FR
 83	Cyan	colour		#06b6d4	2025-11-06 14:32:51.992139	2025-11-06 14:32:51.992139
 84	Orange	colour		#f97316	2025-11-06 14:32:51.992139	2025-11-06 14:32:51.992139
 85	Lime	colour		#84cc16	2025-11-06 14:32:51.992139	2025-11-06 14:32:51.992139
+86	Meetings	resource_type	\N	\N	2025-11-14 14:23:09.60387	2025-11-14 14:23:09.60387
+87	Decision Letters	resource_type	\N	\N	2025-11-14 14:23:09.60387	2025-11-14 14:23:09.60387
+88	Minutes	resource_type	\N	\N	2025-11-14 14:23:09.60387	2025-11-14 14:23:09.60387
+89	Government Memo	resource_type	\N	\N	2025-11-14 14:23:09.60387	2025-11-14 14:23:09.60387
+90	Committee Report	resource_type	\N	\N	2025-11-14 14:23:09.60387	2025-11-14 14:23:09.60387
 \.
 
 
@@ -1582,6 +1718,72 @@ COPY public.meeting_minutes (id, meeting_id, document_id, prepared_by, approved_
 --
 
 COPY public.meeting_participants (id, meeting_id, user_id, group_id, created_at, rsvp_id) FROM stdin;
+1	16	1	\N	2025-11-12 01:04:03.111048	\N
+2	16	2	\N	2025-11-12 01:04:03.137019	\N
+3	16	12	\N	2025-11-12 01:04:03.138793	\N
+4	16	32	\N	2025-11-12 01:04:03.141269	\N
+5	16	31	\N	2025-11-12 01:04:03.14291	\N
+6	16	38	\N	2025-11-12 01:04:03.153018	\N
+7	16	42	\N	2025-11-12 01:06:12.162146	\N
+8	16	33	\N	2025-11-12 01:06:12.178489	\N
+9	16	315	\N	2025-11-12 01:06:12.181266	\N
+10	16	39	\N	2025-11-12 01:06:12.183019	\N
+11	16	34	\N	2025-11-12 01:06:26.172118	\N
+12	16	7	\N	2025-11-12 01:06:26.177643	\N
+13	16	9	\N	2025-11-12 01:06:26.179912	\N
+14	16	41	\N	2025-11-12 01:07:12.582405	\N
+15	16	14	\N	2025-11-12 01:07:12.585286	\N
+16	16	44	\N	2025-11-12 01:10:02.11363	\N
+17	16	40	\N	2025-11-12 01:10:02.144562	\N
+18	16	11	\N	2025-11-12 12:16:42.49356	\N
+19	1	2	\N	2025-11-12 15:17:56.444037	\N
+20	1	12	\N	2025-11-12 15:17:56.457456	\N
+21	1	32	\N	2025-11-12 15:17:56.460006	\N
+22	2	1	\N	2025-11-12 15:42:33.574938	\N
+23	2	2	\N	2025-11-12 15:42:33.586764	\N
+24	2	12	\N	2025-11-12 15:42:33.589297	\N
+25	2	32	\N	2025-11-12 15:42:33.591088	\N
+26	16	43	\N	2025-11-12 20:15:03.262728	\N
+27	16	37	\N	2025-11-12 20:15:08.6071	\N
+28	20	1	\N	2025-11-13 12:52:56.732536	\N
+29	20	2	\N	2025-11-13 12:52:56.739216	\N
+30	20	12	\N	2025-11-13 12:52:56.743153	\N
+31	20	32	\N	2025-11-13 12:52:56.74894	\N
+32	20	31	\N	2025-11-13 12:52:56.75379	\N
+33	20	38	\N	2025-11-13 12:52:56.755852	\N
+34	20	42	\N	2025-11-13 12:52:56.757942	\N
+35	21	2	\N	2025-11-13 16:34:30.165574	\N
+36	21	12	\N	2025-11-13 16:34:30.183046	\N
+37	21	32	\N	2025-11-13 16:34:30.204684	\N
+38	21	31	\N	2025-11-13 16:34:30.209676	\N
+39	21	30	\N	2025-11-13 16:34:30.217079	\N
+40	15	2	\N	2025-11-14 11:22:43.661516	\N
+41	15	12	\N	2025-11-14 11:22:43.724385	\N
+42	15	33	\N	2025-11-14 11:22:43.750712	\N
+43	15	42	\N	2025-11-14 11:22:43.757666	\N
+44	15	34	\N	2025-11-14 11:22:43.764414	\N
+45	15	41	\N	2025-11-14 11:22:43.773906	\N
+46	15	14	\N	2025-11-14 11:22:43.794675	\N
+47	15	44	\N	2025-11-14 11:22:43.798973	\N
+48	15	43	\N	2025-11-14 11:22:43.807114	\N
+49	15	13	\N	2025-11-14 11:22:43.81385	\N
+50	15	37	\N	2025-11-14 11:22:43.846859	\N
+51	22	1	\N	2025-11-14 11:33:06.20708	\N
+52	22	2	\N	2025-11-14 11:33:06.249273	\N
+53	22	12	\N	2025-11-14 11:33:06.254167	\N
+54	22	32	\N	2025-11-14 11:33:06.294436	\N
+55	22	38	\N	2025-11-14 11:33:06.302909	\N
+56	22	34	\N	2025-11-14 11:33:06.30645	\N
+57	22	41	\N	2025-11-14 11:33:06.311049	\N
+58	22	39	\N	2025-11-14 11:33:06.317647	\N
+59	22	44	\N	2025-11-14 11:33:06.346357	\N
+60	22	40	\N	2025-11-14 11:33:06.351928	\N
+61	22	11	\N	2025-11-14 11:33:06.356839	\N
+62	22	37	\N	2025-11-14 11:33:06.360464	\N
+63	22	30	\N	2025-11-14 11:33:06.365577	\N
+64	22	47	\N	2025-11-14 11:33:06.377586	\N
+65	22	45	\N	2025-11-14 11:33:06.402554	\N
+66	22	46	\N	2025-11-14 11:33:06.409793	\N
 \.
 
 
@@ -1596,8 +1798,9 @@ COPY public.meetings (id, name, type, start_at, location, chair_id, status, crea
 8	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:27:34.217799	2025-10-19 21:27:34.217799	\N	\N	\N	135	\N	\N
 10	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:29:14.734234	2025-10-19 21:29:14.734234	\N	\N	\N	165	\N	\N
 12	Full Cabinet Meeting - March 2024	Cabinet	2024-11-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:40:39.443911	2025-10-19 21:40:39.443911	\N	\N	\N	195	\N	\N
-16	Full Cabinet Meeting - March 2025	Cabinet	2025-11-10 22:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:51:02.507257	2025-11-10 16:31:21.36492	\N	\N		2550	2025-11-12 22:30:00	#ef4444
+19	6th Full Cabinet Meeting	Cabinet	2025-11-28 03:00:00	State House, Nairobi	1	Scheduled	2025-11-09 18:31:36.996892	2025-11-12 11:22:54.027336	\N	1	Full cabinet meeting	120	2025-11-28 11:00:00	#f59e0b
 18	Full Cabinet Meeting - March 2024	Cabinet	2024-03-20 10:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:57:31.117098	2025-10-19 21:57:31.117098	\N	\N	\N	300	\N	\N
+20	hi	Cabinet	2025-12-05 12:00:00	Office of the Deputy President	1	Scheduled	2025-11-13 12:52:24.819651	2025-11-13 12:52:24.819651	\N	1		60	2025-12-05 19:00:00	#10b981
 3	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:09:38.96893	2025-10-18 20:09:38.96893	\N	\N	\N	60	\N	\N
 5	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:10:31.823405	2025-10-18 20:10:31.823405	\N	\N	\N	90	\N	\N
 7	Cabinet Committee on Governance and Security - Q1 2024	Committee	2024-03-15 09:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:27:34.208271	2025-10-19 21:27:34.208271	\N	\N	\N	120	\N	\N
@@ -1607,8 +1810,10 @@ COPY public.meetings (id, name, type, start_at, location, chair_id, status, crea
 15	Cabinet Committee on Governance and Security - Q1 2025	Committee	2025-11-16 03:00:00	State House, Nairobi	2	scheduled	2025-10-19 21:51:02.504194	2025-11-09 23:02:16.495392	\N	\N		240	2025-11-16 13:00:00	#f59e0b
 13	Cabinet Committee on Governance and Security - Q1 2025	Committee	2025-11-12 21:00:00	State House, Nairobi	2	Scheduled	2025-10-19 21:43:41.244326	2025-11-10 00:19:02.257969	\N	\N		2100	2025-11-14 14:00:00	#8b5cf6
 1	Governance and Security - Q1 2025	Committee	2025-11-20 21:00:00	State House, Nairobi	2	scheduled	2025-10-18 20:08:36.786348	2025-11-10 00:20:33.320657	\N	\N		30	2025-11-21 03:30:00	#f97316
-19	6th Full Cabinet Meeting	Cabinet	2025-11-27 18:00:00	State House, Nairobi	1	Scheduled	2025-11-09 18:31:36.996892	2025-11-10 00:20:45.724529	\N	1	Full cabinet meeting	120	2025-11-28 02:00:00	#10b981
 14	Full Cabinet Meeting - March 2024	Cabinet	2025-11-06 19:00:00	State House, Nairobi	1	scheduled	2025-10-19 21:43:41.246264	2025-11-10 00:21:06.765439	\N	\N		225	2025-11-07 04:45:00	#ef4444
+21	Updates on the boardms System	Committee	2025-11-13 02:59:00	State Lodge, Sagana	2	Ongoing	2025-11-13 16:29:27.103934	2025-11-13 16:32:13.161671	\N	1		60	2025-11-13 09:59:00	#3b82f6
+16	Full Cabinet Meeting - March 2025	Cabinet	2025-11-14 01:00:00	State House, Nairobi	1	Approved	2025-10-19 21:51:02.507257	2025-11-13 16:36:13.865008	\N	\N		2550	2025-11-16 01:30:00	#8b5cf6
+22	Eunice Awuor Feedback meeting	Cabinet	2025-11-14 12:00:00	State Lodge, Sagana	1	Completed	2025-11-14 11:32:11.725648	2025-11-14 11:32:11.725648	\N	1		30	2025-11-14 18:30:00	#84cc16
 \.
 
 
@@ -1664,6 +1869,27 @@ COPY public.ministries (id, name, acronym, cluster_id, cabinet_secretary, headqu
 --
 
 COPY public.presidential_signatures (id, document_id, signed_by, signed_at, signature_type, reference_id, reference_type, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: resource_files; Type: TABLE DATA; Schema: public; Owner: admin
+--
+
+COPY public.resource_files (id, resource_id, name, display_name, file_type, file_url, file_size, ministry_id, uploaded_by, uploaded_at, metadata, created_at) FROM stdin;
+1	1	MINISTRY_OF_COOPERATIVES_AND_MSME_DEVELOPMENT_KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM	word	/uploads/resources/Meetings/2025/6TH-CABINET-MEETING-2025/1763120775156-r35rq2mrds.docx	21396	9	1	2025-11-14 14:46:15.159288	{"year": 2025, "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-14T11:46:15.158Z", "ministryName": "Ministry of Cooperatives and MSME Development", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "resourceName": "6TH-CABINET-MEETING-2025", "resourceType": "Meetings", "uniqueFileName": "1763120775156-r35rq2mrds.docx", "folderStructure": "resources/Meetings/2025/6TH-CABINET-MEETING-2025/"}	2025-11-14 14:46:15.159288
+2	1	MINISTRY_OF_ENERGY_AND_PETROLEUM_MEETING_MGT.docx	Meeting Mgt	word	/uploads/resources/Meetings/2025/6TH-CABINET-MEETING-2025/1763120790499-f4xgny2f2ph.docx	8606572	13	1	2025-11-14 14:46:30.529974	{"year": 2025, "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-14T11:46:30.529Z", "ministryName": "Ministry of Energy and Petroleum", "originalName": "Meeting Mgt.docx", "resourceName": "6TH-CABINET-MEETING-2025", "resourceType": "Meetings", "uniqueFileName": "1763120790499-f4xgny2f2ph.docx", "folderStructure": "resources/Meetings/2025/6TH-CABINET-MEETING-2025/"}	2025-11-14 14:46:30.529974
+3	2	MINISTRY_OF_ENVIRONMENT__CLIMATE_CHANGE_AND_FORESTRY_KENYA_ELECTRONIC_CABINET_MEETING_MANAGEMENT_SYSTEM.docx	KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM	word	/uploads/resources/Government Memo/2025/GOV-MEMO-202501/1763121763557-sf4srnd00c.docx	21396	21	1	2025-11-14 15:02:43.559997	{"year": 2025, "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "uploadedAt": "2025-11-14T12:02:43.559Z", "ministryName": "Ministry of Environment, Climate Change and Forestry", "originalName": "KENYA ELECTRONIC CABINET MEETING MANAGEMENT SYSTEM.docx", "resourceName": "GOV-MEMO-202501", "resourceType": "Government Memo", "uniqueFileName": "1763121763557-sf4srnd00c.docx", "folderStructure": "resources/Government Memo/2025/GOV-MEMO-202501/"}	2025-11-14 15:02:43.559997
+\.
+
+
+--
+-- Data for Name: resources; Type: TABLE DATA; Schema: public; Owner: admin
+--
+
+COPY public.resources (id, name, display_name, resource_type_id, year, description, metadata, created_by, created_at, updated_at) FROM stdin;
+1	6TH-CABINET-MEETING-2025	6TH CABINET MEETING 2025	86	2025		\N	1	2025-11-14 14:40:08.089508	2025-11-14 14:40:08.089508
+2	GOV-MEMO-202501	GOV MEMO 2025/01	89	2025		\N	1	2025-11-14 15:02:14.289798	2025-11-14 15:02:14.289798
 \.
 
 
@@ -1749,34 +1975,34 @@ COPY public.users (id, name, email, password, role, status, phone, last_login, c
 4	Cabinet Secretariat	secretariat@cabinet.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretariat	active	\N	\N	2025-10-18 20:05:49.456668	2025-10-18 20:05:49.456668	\N
 45	Dr. Raymond Omollo	omollo@interior.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Principal Secretary	inactive	\N	\N	2025-10-18 20:08:36.743854	2025-10-18 20:08:36.743854	\N
 49	Assistant Director Cabinet	assistant.director@cabinet.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Assistant Director	pending	\N	\N	2025-10-18 20:08:36.745376	2025-10-18 20:08:36.745376	\N
-30	Wycliffe Ambetsa Oparanya, FCPA, E.G.H	info@cooperatives.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 17:47:46.951989	2025-10-18 20:08:36.737185	2025-10-20 12:36:22.982453	\N
-48	Mercy Kiiru Wanjau	director.cabinet@cabinet.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Director	active	\N	\N	2025-10-18 20:08:36.74501	2025-10-20 12:43:52.671176	\N
-43	Rebecca Miano, E.G.H.	info@tourism.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742854	2025-10-20 12:44:29.573523	\N
-315	Geoffrey Kiringa Ruku	info@publicservice.go.ke	$2b$10$vKI.NvWCI25vGY.Y4AsVaOeNCRNhhZUEmF2Mnae88Q8Jt1YabTV/i	Cabinet Secretary	active	\N	\N	2025-10-20 12:45:08.725265	2025-10-20 12:45:08.725265	\N
-37	Salim Mvurya	info@youth.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.740557	2025-10-20 12:35:23.782763	\N
+5	Ms. Dorcas Agik Oduor SC, E.B.S., O.G.W.	info@attorneygeneral.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Attorney General	active	\N	\N	2025-10-18 20:05:49.488775	2025-10-20 12:42:29.434883	https://www.president.go.ke/wp-content/uploads/oduor-dorcas-profile.jpg
+44	Ms. Beatrice Asukul Moe	info@eac.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 21:07:32.801766	2025-10-18 20:08:36.743466	2025-10-20 12:43:07.417741	https://www.president.go.ke/wp-content/uploads/Beatrice-Askul-Profile.jpg
 46	Ms. Mary Muthoni Muriuki	muriuki@health.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Principal Secretary	inactive	\N	\N	2025-10-18 20:08:36.744243	2025-10-20 00:23:23.300223	\N
-13	Roselinda Soipan Tuya, E.G.H.	info@mod.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.657677	2025-10-20 12:35:52.667974	\N
-6	Onesimus Kipchumba Murkomen	murkomen@interior.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-10-30 12:03:09.024536	2025-10-18 20:05:49.499342	2025-10-20 12:40:26.467802	\N
-2	H.E Prof. Kithure Kindiki	deputy.president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Deputy President	active	\N	2025-10-20 12:26:14.237931	2025-10-18 20:05:49.414744	2025-10-20 12:27:57.780741	\N
-3	H.E Dr. Musalia Mudavadi E.G.H.	mudavadi@primecabinet.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Prime Cabinet Secretary	active	\N	2025-11-06 11:49:26.039362	2025-10-18 20:05:49.446396	2025-10-20 12:31:19.460478	\N
-14	Lee Maiyani Kinyanjui	info@investment.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-06 12:15:53.673823	2025-10-18 20:05:49.689673	2025-10-20 12:37:50.711031	\N
-12	Aden Duale, E.G.H.	duale@health.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.636794	2025-10-20 12:30:40.715962	\N
-11	William Kabogo Gitau	owalo@ict.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-07 11:45:30.944582	2025-10-18 20:05:49.615597	2025-10-20 12:39:37.601791	\N
+48	Mercy Kiiru Wanjau	director.cabinet@cabinet.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Director	active	\N	\N	2025-10-18 20:08:36.74501	2025-10-20 12:43:52.671176	https://www.president.go.ke/wp-content/uploads/Wanjau.jpg
+7	John Mbadi Ng’ongo, E.G.H.	ndungu@treasury.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.531267	2025-10-20 12:36:46.187128	https://www.president.go.ke/wp-content/uploads/John-Mbadi.png
+9	Julius Migos Ogamba	migos@education.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.573707	2025-10-20 12:33:34.473066	https://www.president.go.ke/wp-content/uploads/Julius-Migosi.png
+13	Roselinda Soipan Tuya, E.G.H.	info@mod.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.657677	2025-10-20 12:35:52.667974	https://www.president.go.ke/wp-content/uploads/Soipan-Tuya.jpg
+315	Geoffrey Kiringa Ruku	info@publicservice.go.ke	$2b$10$vKI.NvWCI25vGY.Y4AsVaOeNCRNhhZUEmF2Mnae88Q8Jt1YabTV/i	Cabinet Secretary	active	\N	\N	2025-10-20 12:45:08.725265	2025-10-20 12:45:08.725265	https://www.president.go.ke/wp-content/uploads/RUKU.jpg
+14	Lee Maiyani Kinyanjui	info@investment.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-06 12:15:53.673823	2025-10-18 20:05:49.689673	2025-10-20 12:37:50.711031	https://www.president.go.ke/wp-content/uploads/1-2.jpg
 47	Dr. Belio Kipsang	kipsang@education.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Principal Secretary	inactive	\N	\N	2025-10-18 20:08:36.74462	2025-10-22 12:02:20.446546	\N
-7	John Mbadi Ng’ongo, E.G.H.	ndungu@treasury.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.531267	2025-10-20 12:36:46.187128	\N
-31	Davis Chirchir, E.G.H	info@transport.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 13:28:44.33036	2025-10-18 20:08:36.73816	2025-10-20 12:41:12.921993	\N
-9	Julius Migos Ogamba	migos@education.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.573707	2025-10-20 12:33:34.473066	\N
-32	Alice Wahome, E.G.H.	info@lands.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738586	2025-10-20 12:33:57.380222	\N
-38	Dr. Alfred Mutua, E.G.H.	info@labour.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.740955	2025-10-20 12:34:05.434036	\N
-41	Hassan Ali Joho, E.G.H	info@mining.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742089	2025-10-20 12:34:22.465865	\N
-33	Eric Muriithi Muuga	info@water.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738985	2025-10-20 12:37:06.118724	\N
-42	Dr. Deborah Mulongo Barasa	info@environment.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742456	2025-10-20 12:37:30.011469	\N
-40	Mutahi Kagwe E.G.H.	info@kilimo.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 20:28:48.755589	2025-10-18 20:08:36.741717	2025-10-20 12:38:52.479726	\N
-34	James Opiyo Wandayi, E.G.H	info@energy.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 14:18:19.674968	2025-10-18 20:08:36.739374	2025-10-20 12:58:56.862519	\N
-39	Hanna Wendot Cheptumo	info@gender.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.741324	2025-10-20 12:41:54.857949	\N
-5	Ms. Dorcas Agik Oduor SC, E.B.S., O.G.W.	info@attorneygeneral.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Attorney General	active	\N	\N	2025-10-18 20:05:49.488775	2025-10-20 12:42:29.434883	\N
-44	Ms. Beatrice Asukul Moe	info@eac.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 21:07:32.801766	2025-10-18 20:08:36.743466	2025-10-20 12:43:07.417741	\N
-1	H.E. Dr. William Samoei Ruto, C.G.H	president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	President	active	\N	2025-11-07 11:22:44.831764	2025-10-18 20:05:49.371046	2025-10-20 12:28:25.024845	https://www.president.go.ke/wp-content/uploads/administration.jpg
+31	Davis Chirchir, E.G.H	info@transport.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 13:28:44.33036	2025-10-18 20:08:36.73816	2025-10-20 12:41:12.921993	https://www.president.go.ke/wp-content/uploads/Davis-Chirchir.png
+2	H.E Prof. Kithure Kindiki	deputy.president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Deputy President	active	\N	2025-10-20 12:26:14.237931	2025-10-18 20:05:49.414744	2025-10-20 12:27:57.780741	https://www.president.go.ke/wp-content/uploads/kindiki-400x400.jpg
+30	Wycliffe Ambetsa Oparanya, FCPA, E.G.H	info@cooperatives.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 17:47:46.951989	2025-10-18 20:08:36.737185	2025-10-20 12:36:22.982453	https://www.president.go.ke/wp-content/uploads/oparanya.png
+11	William Kabogo Gitau	owalo@ict.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-11-19 21:01:26.388362	2025-10-18 20:05:49.615597	2025-10-20 12:39:37.601791	https://www.president.go.ke/wp-content/uploads/3-2.jpg
+3	H.E Dr. Musalia Mudavadi E.G.H.	mudavadi@primecabinet.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Prime Cabinet Secretary	active	\N	2025-11-06 11:49:26.039362	2025-10-18 20:05:49.446396	2025-10-20 12:31:19.460478	https://www.president.go.ke/wp-content/uploads/Mudavadi.jpg
+1	H.E. Dr. William Samoei Ruto, C.G.H	president@president.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	President	active	\N	2025-11-19 21:18:38.161832	2025-10-18 20:05:49.371046	2025-10-20 12:28:25.024845	https://www.president.go.ke/wp-content/uploads/administration.jpg
+6	Onesimus Kipchumba Murkomen	murkomen@interior.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	2025-10-30 12:03:09.024536	2025-10-18 20:05:49.499342	2025-10-20 12:40:26.467802	https://www.president.go.ke/wp-content/uploads/Mukomen-1.jpg
+12	Aden Duale, E.G.H.	duale@health.go.ke	$2b$10$FFkp5ryENeF81s7aB9QyB.iqcjr5cEd/f3t8GBPEiYpk7fqSyj0yW	Cabinet Secretary	active	\N	\N	2025-10-18 20:05:49.636794	2025-10-20 12:30:40.715962	https://www.president.go.ke/wp-content/uploads/Aden-Duale.png
+32	Alice Wahome, E.G.H.	info@lands.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738586	2025-10-20 12:33:57.380222	https://www.president.go.ke/wp-content/uploads/alice-wahome.jpg
+41	Hassan Ali Joho, E.G.H	info@mining.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742089	2025-10-20 12:34:22.465865	https://www.president.go.ke/wp-content/uploads/Joho.png
+33	Eric Muriithi Muuga	info@water.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.738985	2025-10-20 12:37:06.118724	https://www.president.go.ke/wp-content/uploads/Eric-Murithi.png
+34	James Opiyo Wandayi, E.G.H	info@energy.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-20 14:18:19.674968	2025-10-18 20:08:36.739374	2025-10-20 12:58:56.862519	https://www.president.go.ke/wp-content/uploads/Opiyo-Wandayi.png
+37	Salim Mvurya	info@youth.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.740557	2025-10-20 12:35:23.782763	https://www.president.go.ke/wp-content/uploads/Salim-Mvurya-1.jpg
+38	Dr. Alfred Mutua, E.G.H.	info@labour.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.740955	2025-10-20 12:34:05.434036	https://www.president.go.ke/wp-content/uploads/Alfred.jpg
+39	Hanna Wendot Cheptumo	info@gender.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.741324	2025-10-20 12:41:54.857949	https://www.president.go.ke/wp-content/uploads/cheptumo.jpg
+40	Mutahi Kagwe E.G.H.	info@kilimo.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	2025-10-19 20:28:48.755589	2025-10-18 20:08:36.741717	2025-10-20 12:38:52.479726	https://www.president.go.ke/wp-content/uploads/2-3.jpg
+42	Dr. Deborah Mulongo Barasa	info@environment.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742456	2025-10-20 12:37:30.011469	https://www.president.go.ke/wp-content/uploads/DR-DEBORAH-MLONGO-BARASA-HEALTH-CS.jpg
+43	Rebecca Miano, E.G.H.	info@tourism.go.ke	$2b$10$YOEhXIqiJ1Bwdybw4YVVkugT9MyHFVXYIjUVi96et/Ep5zLZFhl3m	Cabinet Secretary	active	\N	\N	2025-10-18 20:08:36.742854	2025-10-20 12:44:29.573523	https://www.president.go.ke/wp-content/uploads/Rebecca-Miano.jpg
 \.
 
 
@@ -1798,14 +2024,14 @@ SELECT pg_catalog.setval('public.agencies_id_seq', 33, true);
 -- Name: agenda_documents_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.agenda_documents_id_seq', 2, true);
+SELECT pg_catalog.setval('public.agenda_documents_id_seq', 15, true);
 
 
 --
 -- Name: agenda_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.agenda_id_seq', 19, true);
+SELECT pg_catalog.setval('public.agenda_id_seq', 37, true);
 
 
 --
@@ -1833,7 +2059,7 @@ SELECT pg_catalog.setval('public.cabinet_releases_id_seq', 1, false);
 -- Name: categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner: admin
 --
 
-SELECT pg_catalog.setval('public.categories_id_seq', 85, true);
+SELECT pg_catalog.setval('public.categories_id_seq', 90, true);
 
 
 --
@@ -1889,14 +2115,14 @@ SELECT pg_catalog.setval('public.meeting_minutes_id_seq', 1, false);
 -- Name: meeting_participants_id_seq; Type: SEQUENCE SET; Schema: public; Owner: admin
 --
 
-SELECT pg_catalog.setval('public.meeting_participants_id_seq', 1, false);
+SELECT pg_catalog.setval('public.meeting_participants_id_seq', 66, true);
 
 
 --
 -- Name: meetings_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.meetings_id_seq', 19, true);
+SELECT pg_catalog.setval('public.meetings_id_seq', 22, true);
 
 
 --
@@ -1925,6 +2151,20 @@ SELECT pg_catalog.setval('public.ministries_id_seq', 161, true);
 --
 
 SELECT pg_catalog.setval('public.presidential_signatures_id_seq', 1, false);
+
+
+--
+-- Name: resource_files_id_seq; Type: SEQUENCE SET; Schema: public; Owner: admin
+--
+
+SELECT pg_catalog.setval('public.resource_files_id_seq', 3, true);
+
+
+--
+-- Name: resources_id_seq; Type: SEQUENCE SET; Schema: public; Owner: admin
+--
+
+SELECT pg_catalog.setval('public.resources_id_seq', 2, true);
 
 
 --
@@ -2169,6 +2409,30 @@ ALTER TABLE ONLY public.ministries
 
 ALTER TABLE ONLY public.presidential_signatures
     ADD CONSTRAINT presidential_signatures_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: resource_files resource_files_pkey; Type: CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resource_files
+    ADD CONSTRAINT resource_files_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: resources resources_name_year_key; Type: CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resources
+    ADD CONSTRAINT resources_name_year_key UNIQUE (name, year);
+
+
+--
+-- Name: resources resources_pkey; Type: CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resources
+    ADD CONSTRAINT resources_pkey PRIMARY KEY (id);
 
 
 --
@@ -2710,6 +2974,46 @@ ALTER TABLE ONLY public.presidential_signatures
 
 
 --
+-- Name: resource_files resource_files_ministry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resource_files
+    ADD CONSTRAINT resource_files_ministry_id_fkey FOREIGN KEY (ministry_id) REFERENCES public.ministries(id);
+
+
+--
+-- Name: resource_files resource_files_resource_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resource_files
+    ADD CONSTRAINT resource_files_resource_id_fkey FOREIGN KEY (resource_id) REFERENCES public.resources(id) ON DELETE CASCADE;
+
+
+--
+-- Name: resource_files resource_files_uploaded_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resource_files
+    ADD CONSTRAINT resource_files_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.users(id);
+
+
+--
+-- Name: resources resources_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resources
+    ADD CONSTRAINT resources_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
+
+
+--
+-- Name: resources resources_resource_type_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: admin
+--
+
+ALTER TABLE ONLY public.resources
+    ADD CONSTRAINT resources_resource_type_id_fkey FOREIGN KEY (resource_type_id) REFERENCES public.categories(id);
+
+
+--
 -- Name: state_departments state_departments_ministry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -2761,5 +3065,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE admin IN SCHEMA public GRANT ALL ON TABLES  TO
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 7bhHyn3bmyGGKvXR4mVQH7o8xdJY9iyYnHXTsgfN3mlPqueK4M9iCoftabGrdMq
+\unrestrict 2j3gNbPboEhjeI5oLXy8IWONY1qCJVLAeaECk0rjjvWjkAvimenQRKrcobQz8Gi
 

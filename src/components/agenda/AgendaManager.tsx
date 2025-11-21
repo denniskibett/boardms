@@ -1,5 +1,4 @@
 'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Edit, MoreVertical } from 'lucide-react';
 
@@ -25,6 +24,7 @@ interface AgendaItem {
   status?: string;
   ministry_name?: string;
   documents?: any[];
+
   // Add fields that AgendaSlideOver expects
   name?: string;
   sort_order?: number;
@@ -43,6 +43,7 @@ interface AgendaManagerProps {
   currentPage?: number;
   onAgendaItemClick?: (documentIndex: number) => void;
   onShowAgendaDetails?: (agenda: AgendaItem) => void;
+    onPageChange: (page: number) => void; 
 }
 
 export default function AgendaManager({

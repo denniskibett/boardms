@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "db:init": "tsx scripts/init-db.ts",
-    "db:reset": "tsx scripts/reset-db.ts"
+    "db:reset": "tsx scripts/reset-db.ts",
+    "import-all": "node import-all-data.js"
   },
   "dependencies": {
     "@auth/pg-adapter": "^1.11.0",
@@ -21,6 +22,7 @@
     "@prisma/client": "^6.19.0",
     "@react-jvectormap/core": "^1.0.4",
     "@react-jvectormap/world": "^1.1.2",
+    "@supabase/supabase-js": "^2.84.0",
     "@tailwindcss/forms": "^0.5.9",
     "@tailwindcss/postcss": "^4.0.9",
     "@types/bcrypt": "^6.0.0",

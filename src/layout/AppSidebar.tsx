@@ -10,17 +10,12 @@ import {
   // New E-Cabinet icons
   DashboardIcon,
   DocumentIcon,
-  CommitteeIcon,
   MeetingIcon,
-  DecisionIcon,
-  ActionIcon,
   GroupIcon,
   ChartIcon,
   SettingsIcon,
-  AuditIcon,
-  PageIcon 
+  AuditIcon
 } from "@/icons/index";
-import { PersonStanding } from "lucide-react";
 
 
 type NavItem = {
@@ -98,7 +93,7 @@ const managementItems: NavItem[] = [
     subItems: [
       { name: "All Users", path: "/users" },
       { name: "Roles & Permissions", path: "/users/roles" },
-      { name: "MDAs", path: "/users/mdas" },
+      { name: "MDAs", path: "/mdas" },
     ],
   },
   {

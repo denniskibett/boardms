@@ -1,6 +1,6 @@
 // app/components/meetings/MeetingCalendar.tsx - FIXED VERSION
 "use client";
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -15,7 +15,6 @@ import {
   MapPin, 
   CheckCircle, 
   Clock, 
-  XCircle, 
   Loader2,
   X,
   Users,
@@ -29,7 +28,6 @@ import {
   formatDateForInput, 
   parseDateFromInput, 
   setSystemTimezone,
-  getSystemTimezone,
   toTimezone,
   addMinutes,
   formatDate,

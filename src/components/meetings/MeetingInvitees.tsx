@@ -7,7 +7,8 @@ interface Participant {
   name: string;
   email: string;
   role: string;
-  user: {
+  image?: string;
+  user?: {
     name: string;
     image?: string;
   };
@@ -57,7 +58,7 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({ meeting }) => {
 
   // Helper function to get participant image
   const getParticipantImage = (participant: Participant) => {
-    return participant.user?.image || null;
+    return participant.user?.image || participant.image || null;
   };
 
   return (
@@ -159,35 +160,15 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({ meeting }) => {
                       <p className="font-medium text-gray-600 dark:text-gray-300 mb-1">
                         Other Participants:
                       </p>
-                       <ul className="space-y-1">
+                      <ul className="space-y-1">
                         {hiddenParticipants.map((p, i) => (
-                          <li key={p.id || i} className="truncate">{p.name || "Unknown"} - {p.role || "Unknown"}</li>
-                          
+                          <li key={p.id || i} className="truncate">{getDisplayName(p)} - {p.role || "Unknown"}</li>
                         ))}
                       </ul>
                     </div>
                   </div>
                 )}
               </div>
-
-              {/* Debug Info */}
-              {/* {process.env.NODE_ENV === 'development' && (
-                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                  <p className="text-xs font-medium text-yellow-800 dark:text-yellow-200 mb-2">
-                    Debug Info (Development only):
-                  </p>
-                  <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
-                    <div>Total: {totalParticipants}</div>
-                    <div>Visible: {visibleParticipants.length}</div>
-                    <div>Hidden: {hiddenParticipants.length}</div>
-                    {visibleParticipants.map((p, i) => (
-                      <div key={i}>
-                        {getDisplayName(p)}: {getParticipantImage(p) ? 'Has Image' : 'No Image'}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )} */}
             </div>
           )}
 

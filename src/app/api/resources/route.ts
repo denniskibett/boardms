@@ -1,8 +1,20 @@
 // app/api/resources/route.ts (Complete version)
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next'; // ← FIXED IMPORT
 import { authOptions } from '@/lib/auth';
+
+// Define session and user types
+interface User {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
+
+interface Session {
+  user: User;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(authOptions) as Session | null;
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

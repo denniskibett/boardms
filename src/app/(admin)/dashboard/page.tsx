@@ -1,7 +1,6 @@
 // app/(admin)/dashboard/page.tsx
 import type { Metadata } from "next";
 import React from "react";
-import DashboardMetrics from "@/components/dashboard/DashboardMetrics";
 import RecentMemos from "@/components/dashboard/RecentMemos";
 import UpcomingMeetings from "@/components/meetings/UpcomingMeetings";
 import ActionItems from "@/components/dashboard/ActionItems";
@@ -21,7 +20,6 @@ export default function Dashboard() {
       </div> */}
 
       
-
       {/* Upcoming Meetings */}
       <div className="col-span-12 xl:col-span-12">
         <UpcomingMeetings />

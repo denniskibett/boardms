@@ -1,68 +1,72 @@
-// lib/db.ts
-import { Pool } from 'pg';
-import { seedInitialData } from './seedData';
+// lib/db.ts - Updated with proper typing
+import { supabaseServer } from './supabase/server'
+import { supabaseDb } from './supabase-db'
 
-const pool = new Pool({
-  user: process.env.DB_USER || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  database: process.env.DB_NAME || 'boardms',
-  password: process.env.DB_PASSWORD || 'password',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  connectionTimeoutMillis: 5000,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
-
+// Test database connection
 export const testConnection = async () => {
   try {
-    const client = await pool.connect();
-    console.log('✅ Database connected successfully');
-    client.release();
-    return true;
+    const supabase = supabaseServer()
+    const { data, error } = await supabase.from('users').select('id').limit(1)
+    
+    if (error) {
+      console.error('❌ Supabase connection failed:', error)
+      return false
+    }
+    
+    console.log('✅ Supabase connected successfully')
+    return true
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
-    return false;
+    console.error('❌ Supabase connection failed:', error)
+    return false
   }
-};
+}
 
-export const query = (text: string, params?: any[]) => pool.query(text, params);
-
-export const initDB = async () => {
+// For backward compatibility - wraps the new typed system
+export const query = async (sql: string, params?: any[]) => {
   try {
-    console.log('🔄 Initializing database...');
+    // Simple SQL parser for basic operations
+    const trimmedSql = sql.trim().toUpperCase()
     
-    // Test connection first
-    await testConnection();
-    
-    // Read and execute schema
-    const fs = await import('fs');
-    const path = await import('path');
-    
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
-    
-    // Split by semicolon and execute each statement
-    const statements = schemaSQL.split(';').filter(statement => statement.trim());
-    
-    for (const statement of statements) {
-      if (statement.trim()) {
-        try {
-          await query(statement);
-        } catch (error) {
-          console.warn(`⚠️ Warning executing statement: ${error}`);
-        }
+    if (trimmedSql.startsWith('SELECT')) {
+      // Extract table name from SELECT query
+      const tableMatch = sql.match(/FROM\s+(\w+)/i)
+      if (tableMatch) {
+        const tableName = tableMatch[1]
+        return await supabaseDb.select(tableName, { limit: 10 })
       }
     }
     
-    console.log('✅ Database schema created');
+    if (trimmedSql.startsWith('INSERT')) {
+      // This is more complex - you should use supabaseDb.insert directly
+      console.warn('⚠️ Raw INSERT not supported. Use supabaseDb.insert() instead.')
+    }
     
-    // Seed initial data
-    await seedInitialData();
+    // For other queries, use the new typed system
+    console.warn('⚠️ Raw SQL query not fully supported:', sql)
+    throw new Error('Raw SQL queries not supported. Use supabaseDb methods.')
     
-    console.log('✅ Database initialization completed');
   } catch (error) {
-    console.error('❌ Error initializing database:', error);
-    throw error;
+    console.error('Database query error:', error)
+    throw error
   }
-};
+}
 
-export default pool;
+// Initialize database
+export const initDB = async () => {
+  try {
+    console.log('🔄 Checking Supabase connection...')
+    const isConnected = await testConnection()
+    
+    if (isConnected) {
+      console.log('✅ Supabase initialization completed')
+    } else {
+      throw new Error('Failed to connect to Supabase')
+    }
+  } catch (error) {
+    console.error('❌ Error initializing Supabase:', error)
+    throw error
+  }
+}
+
+// Export for direct use
+export { supabaseServer, supabaseDb }

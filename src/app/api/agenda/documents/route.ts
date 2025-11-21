@@ -1,9 +1,8 @@
-// app/api/agenda/documents/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { query } from '@/lib/db';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next'; // ← Changed import
 import { authOptions } from '@/lib/auth';
 
 // Helper function to get current user from session

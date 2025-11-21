@@ -38,6 +38,42 @@ interface AgendaDocument {
   metadata: any;
 }
 
+// Define debug info interface
+interface DebugInfo {
+  loading?: boolean;
+  dataLoaded?: boolean;
+  usersCount?: number;
+  ministriesCount?: number;
+  categoriesCount?: number;
+  documentsCount?: number;
+  categories?: Category[];
+  error?: string;
+  editingAgenda?: boolean;
+  agendaId?: string | null;
+  originalData?: any;
+  formData?: any;
+  lastOperation?: string;
+  submitError?: string | null;
+  validationError?: string;
+  apiCall?: {
+    method?: string;
+    url?: string;
+    requestData?: any;
+    timestamp?: string;
+    responseStatus?: number;
+    responseError?: any;
+    responseText?: string;
+    responseData?: any;
+    success?: boolean;
+  };
+  formChanges?: Array<{
+    field: string;
+    value: any;
+    timestamp: string;
+  }>;
+  lastError?: any;
+}
+
 const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -56,7 +92,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,7 +101,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
-      setDebugInfo(prev => ({ ...prev, loading: true }));
+      setDebugInfo((prev: DebugInfo | null) => ({ ...prev, loading: true }));
       
       try {
         console.log('🔍 DEBUG: Starting data fetch for AgendaSlideOver');
@@ -117,7 +153,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         setMinistries(ministriesData);
         setStatusOptions(categoriesData);
 
-        setDebugInfo(prev => ({
+        setDebugInfo((prev: DebugInfo | null) => ({
           ...prev,
           dataLoaded: true,
           usersCount: usersData.length,
@@ -131,7 +167,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       } catch (error) {
         console.error('❌ ERROR: Failed to fetch data:', error);
         setError('Failed to load form data. Please try again.');
-        setDebugInfo(prev => ({
+        setDebugInfo((prev: DebugInfo | null) => ({
           ...prev,
           error: error instanceof Error ? error.message : String(error),
           loading: false
@@ -187,7 +223,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       console.log('🔍 DEBUG: Setting form data for existing agenda:', newFormData);
       setFormData(newFormData);
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         editingAgenda: true,
         agendaId: agenda.id,
@@ -244,7 +280,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       
       getNextSortOrder();
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         editingAgenda: false,
         agendaId: null,
@@ -256,19 +292,19 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setDebugInfo(prev => ({ ...prev, lastOperation: 'submit', submitError: null }));
+    setDebugInfo((prev: DebugInfo | null) => ({ ...prev, lastOperation: 'submit', submitError: null }));
     
     if (!formData.name.trim()) {
       const errorMsg = 'Agenda item name is required';
       setError(errorMsg);
-      setDebugInfo(prev => ({ ...prev, validationError: errorMsg }));
+      setDebugInfo((prev: DebugInfo | null) => ({ ...prev, validationError: errorMsg }));
       return;
     }
 
     if (!agenda?.meeting_id) {
       const errorMsg = 'Meeting ID is missing';
       setError(errorMsg);
-      setDebugInfo(prev => ({ ...prev, validationError: errorMsg }));
+      setDebugInfo((prev: DebugInfo | null) => ({ ...prev, validationError: errorMsg }));
       return;
     }
 
@@ -308,7 +344,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         ministry_id: submitData.ministry_id
       });
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         apiCall: {
           method,
@@ -349,10 +385,10 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         
         console.error('❌ DEBUG: API Error response:', errorData);
         
-        setDebugInfo(prev => ({
+        setDebugInfo((prev: DebugInfo | null) => ({
           ...prev,
           apiCall: {
-            ...prev.apiCall,
+            ...prev?.apiCall,
             responseStatus: response.status,
             responseError: errorData,
             responseText: responseText.substring(0, 500) // Limit length
@@ -389,10 +425,10 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
 
       console.log('✅ DEBUG: Agenda saved successfully:', savedAgenda);
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         apiCall: {
-          ...prev.apiCall,
+          ...prev?.apiCall,
           responseStatus: response.status,
           responseData: savedAgenda,
           success: true
@@ -406,7 +442,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       console.error('❌ ERROR: Failed to save agenda:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to save agenda item. Please try again.';
       setError(errorMsg);
-      setDebugInfo(prev => ({ 
+      setDebugInfo((prev: DebugInfo | null) => ({ 
         ...prev, 
         submitError: errorMsg,
         lastError: err 
@@ -418,19 +454,19 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
 
   const handleQuickAdd = async () => {
     setError(null);
-    setDebugInfo(prev => ({ ...prev, lastOperation: 'quickAdd', submitError: null }));
+    setDebugInfo((prev: DebugInfo | null) => ({ ...prev, lastOperation: 'quickAdd', submitError: null }));
     
     if (!formData.name.trim()) {
       const errorMsg = 'Agenda item name is required';
       setError(errorMsg);
-      setDebugInfo(prev => ({ ...prev, validationError: errorMsg }));
+      setDebugInfo((prev: DebugInfo | null) => ({ ...prev, validationError: errorMsg }));
       return;
     }
 
     if (!agenda?.meeting_id) {
       const errorMsg = 'Meeting ID is missing';
       setError(errorMsg);
-      setDebugInfo(prev => ({ ...prev, validationError: errorMsg }));
+      setDebugInfo((prev: DebugInfo | null) => ({ ...prev, validationError: errorMsg }));
       return;
     }
 
@@ -455,7 +491,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         submitData 
       });
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         apiCall: {
           method: 'POST',
@@ -491,10 +527,10 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
         
         console.error('❌ DEBUG: Quick add API Error:', errorData);
         
-        setDebugInfo(prev => ({
+        setDebugInfo((prev: DebugInfo | null) => ({
           ...prev,
           apiCall: {
-            ...prev.apiCall,
+            ...prev?.apiCall,
             responseStatus: response.status,
             responseError: errorData,
             responseText
@@ -515,10 +551,10 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
 
       console.log('✅ DEBUG: Agenda quick added successfully:', savedAgenda);
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev: DebugInfo | null) => ({
         ...prev,
         apiCall: {
-          ...prev.apiCall,
+          ...prev?.apiCall,
           responseStatus: response.status,
           responseData: savedAgenda,
           success: true
@@ -532,7 +568,7 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
       console.error('❌ ERROR: Failed to quick add agenda:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to add agenda item. Please try again.';
       setError(errorMsg);
-      setDebugInfo(prev => ({ 
+      setDebugInfo((prev: DebugInfo | null) => ({ 
         ...prev, 
         submitError: errorMsg,
         lastError: err 
@@ -543,62 +579,62 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
   };
 
   // Document Management Functions
-const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-  if (!agenda?.id || !event.target.files?.length) return;
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!agenda?.id || !event.target.files?.length) return;
 
-  const file = event.target.files[0];
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('agendaId', agenda.id);
-  formData.append('name', file.name);
+    const file = event.target.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('agendaId', agenda.id);
+    formData.append('name', file.name);
 
-  try {
-    setIsUploading(true);
-    console.log('🔄 Uploading file:', {
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      agendaId: agenda.id
-    });
-    
-    const response = await fetch('/api/agenda/documents', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const responseText = await response.text();
-    console.log('📨 Upload response:', {
-      status: response.status,
-      statusText: response.statusText,
-      responseText
-    });
-
-    if (response.ok) {
-      const newDoc = JSON.parse(responseText);
-      console.log('✅ File uploaded successfully:', newDoc);
+    try {
+      setIsUploading(true);
+      console.log('🔄 Uploading file:', {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        agendaId: agenda.id
+      });
       
-      setDocuments(prev => [...prev, newDoc]);
-      event.target.value = '';
-      
-      alert('File uploaded successfully!');
-    } else {
-      let errorData;
-      try {
-        errorData = responseText ? JSON.parse(responseText) : { error: 'Empty response' };
-      } catch {
-        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      const response = await fetch('/api/agenda/documents', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const responseText = await response.text();
+      console.log('📨 Upload response:', {
+        status: response.status,
+        statusText: response.statusText,
+        responseText
+      });
+
+      if (response.ok) {
+        const newDoc = JSON.parse(responseText);
+        console.log('✅ File uploaded successfully:', newDoc);
+        
+        setDocuments(prev => [...prev, newDoc]);
+        event.target.value = '';
+        
+        alert('File uploaded successfully!');
+      } else {
+        let errorData;
+        try {
+          errorData = responseText ? JSON.parse(responseText) : { error: 'Empty response' };
+        } catch {
+          errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        
+        console.error('❌ Upload failed:', errorData);
+        alert(`Upload failed: ${errorData.error}${errorData.details ? ` - ${errorData.details}` : ''}`);
       }
-      
-      console.error('❌ Upload failed:', errorData);
-      alert(`Upload failed: ${errorData.error}${errorData.details ? ` - ${errorData.details}` : ''}`);
+    } catch (error) {
+      console.error('❌ Error uploading file:', error);
+      alert('Failed to upload file. Please try again.');
+    } finally {
+      setIsUploading(false);
     }
-  } catch (error) {
-    console.error('❌ Error uploading file:', error);
-    alert('Failed to upload file. Please try again.');
-  } finally {
-    setIsUploading(false);
-  }
-};
+  };
 
   const handleDeleteDocument = async (documentId: string) => {
     if (!confirm('Are you sure you want to delete this document?')) return;
@@ -650,9 +686,9 @@ const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
       [name]: newValue
     }));
 
-    setDebugInfo(prev => ({
+    setDebugInfo((prev: DebugInfo | null) => ({
       ...prev,
-      formChanges: [...(prev.formChanges || []), { field: name, value: newValue, timestamp: new Date().toISOString() }]
+      formChanges: [...(prev?.formChanges || []), { field: name, value: newValue, timestamp: new Date().toISOString() }]
     }));
   };
 

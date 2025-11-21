@@ -1,13 +1,27 @@
-// components/resources/ResourcesTypeGrid.tsx
 "use client";
 
 import React from 'react';
-import { Folder, File, Users, BookOpen, Calendar } from 'lucide-react';
+import { Folder, File, Users, BookOpen } from 'lucide-react';
+
+interface Resource {
+  resource_type_name: string;
+  file_count?: number;
+  year: number;
+}
+
+interface Category {
+  id: string | number;
+  name: string;
+}
 
 interface ResourcesTypeGridProps {
-  resources: any[];
-  categories: any[];
+  resources: Resource[];
+  categories: Category[];
   onResourceTypeClick: (type: string) => void;
+}
+
+interface ResourcesByType {
+  [key: string]: Resource[];
 }
 
 export default function ResourcesTypeGrid({ 
@@ -16,42 +30,58 @@ export default function ResourcesTypeGrid({
   onResourceTypeClick 
 }: ResourcesTypeGridProps) {
   
-  // Group resources by type
-  const resourcesByType = resources.reduce((acc, resource) => {
+  const resourcesByType = resources.reduce<ResourcesByType>((acc, resource) => {
     const type = resource.resource_type_name || 'UNCATEGORIZED';
     if (!acc[type]) {
       acc[type] = [];
     }
     acc[type].push(resource);
     return acc;
-  }, {} as { [key: string]: any[] });
+  }, {});
 
   const getTypeIcon = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'meetings': return <Users className="w-8 h-8" />;
-      case 'decision_letters': return <File className="w-8 h-8" />;
-      case 'cabinet_releases': return <BookOpen className="w-8 h-8" />;
-      case 'minutes': return <File className="w-8 h-8" />;
-      default: return <Folder className="w-8 h-8" />;
-    }
+    const lowerType = type.toLowerCase();
+    
+    const iconMap: Record<string, React.ReactNode> = {
+      'meetings': <Users className="w-8 h-8" />,
+      'decision_letters': <File className="w-8 h-8" />,
+      'cabinet_releases': <BookOpen className="w-8 h-8" />,
+      'minutes': <File className="w-8 h-8" />
+    };
+
+    return iconMap[lowerType] || <Folder className="w-8 h-8" />;
   };
 
   const getTypeColor = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'meetings': return 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300';
-      case 'decision_letters': return 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300';
-      case 'cabinet_releases': return 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300';
-      case 'minutes': return 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300';
-      default: return 'bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300';
-    }
+    const lowerType = type.toLowerCase();
+    
+    const colorMap: Record<string, string> = {
+      'meetings': 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
+      'decision_letters': 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
+      'cabinet_releases': 'bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-300',
+      'minutes': 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300'
+    };
+
+    return colorMap[lowerType] || 'bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300';
+  };
+
+  const formatCategoryName = (name: string): string => {
+    return name.replace(/_/g, ' ');
   };
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
       {categories.map(category => {
         const typeResources = resourcesByType[category.name] || [];
-        const totalFiles = typeResources.reduce((sum, resource) => sum + (resource.file_count || 0), 0);
-        const years = [...new Set(typeResources.map(r => r.year))].sort((a, b) => b - a);
+        const totalFiles = typeResources.reduce(
+          (sum: number, resource) => sum + (resource.file_count || 0), 
+          0
+        );
+        const years = [...new Set(typeResources.map(resource => resource.year))]
+          .sort((a, b) => b - a);
+
+        const displayYears = years.slice(0, 2).join(', ') + (years.length > 2 ? '...' : '');
+        const formattedName = formatCategoryName(category.name);
 
         return (
           <div
@@ -65,7 +95,7 @@ export default function ResourcesTypeGrid({
               </div>
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900 dark:text-white text-lg">
-                  {category.name.replace(/_/g, ' ')}
+                  {formattedName}
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   {typeResources.length} resources
@@ -83,14 +113,14 @@ export default function ResourcesTypeGrid({
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Years</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {years.slice(0, 2).join(', ')}{years.length > 2 ? '...' : ''}
+                  {displayYears}
                 </span>
               </div>
             </div>
 
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <button className="w-full bg-blue-600 text-white py-2 px-3 rounded-lg text-sm hover:bg-blue-700 transition-colors">
-                Browse {category.name.replace(/_/g, ' ')}
+                Browse {formattedName}
               </button>
             </div>
           </div>

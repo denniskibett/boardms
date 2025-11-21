@@ -3,14 +3,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FileText, 
   Download, 
-  Eye, 
   Loader2, 
   ChevronUp, 
   ChevronDown,
-  File,
-  Image,
-  BookOpen,
-  X,
+  Eye,
   Table,
   Presentation
 } from 'lucide-react';
@@ -87,22 +83,22 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
       let fullHTML = '';
       let pageCount = 0;
 
-      for (const document of allDocuments) {
+      for (const doc of allDocuments) {
         try {
-          const htmlContent = await convertToHTML(document);
+          const htmlContent = await convertToHTML(doc);
           
           // Add agenda header for the first document of each agenda
-          const isFirstDocInAgenda = allDocuments.findIndex(d => d.agenda_id === document.agenda_id) === allDocuments.indexOf(document);
+          const isFirstDocInAgenda = allDocuments.findIndex(d => d.agenda_id === doc.agenda_id) === allDocuments.indexOf(doc);
           if (isFirstDocInAgenda) {
             fullHTML += `
               <div class="agenda-header" style="page-break-before: always; margin-bottom: 2rem;">
                 <h2 class="agenda-title" style="color: #1f2937; font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">
-                  ${document.agenda_name}
+                  ${doc.agenda_name}
                 </h2>
-                ${document.presenter ? `
+                ${doc.presenter ? `
                   <div class="presenter-info" style="color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem;">
-                    Presented by: <strong>${document.presenter.name}</strong>
-                    ${document.presenter.role ? ` • ${document.presenter.role}` : ''}
+                    Presented by: <strong>${doc.presenter.name}</strong>
+                    ${doc.presenter.role ? ` • ${doc.presenter.role}` : ''}
                   </div>
                 ` : ''}
                 <hr style="border-color: #e5e7eb; margin: 1rem 0;" />
@@ -111,7 +107,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
           }
 
           fullHTML += `
-            <div class="document-content" data-document-id="${document.id}">
+            <div class="document-content" data-document-id="${doc.id}">
               ${htmlContent}
             </div>
             <div style="page-break-after: always;"></div>
@@ -119,13 +115,13 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
 
           pageCount += await estimatePageCount(htmlContent);
         } catch (error) {
-          console.error(`Failed to process document ${document.name}:`, error);
+          console.error(`Failed to process document ${doc.name}:`, error);
           fullHTML += `
             <div class="document-error" style="padding: 2rem; text-align: center; color: #6b7280;">
               <div style="margin-bottom: 1rem;">⚠️</div>
-              <p>Unable to display: ${document.name}</p>
+              <p>Unable to display: ${doc.name}</p>
               <p style="font-size: 0.875rem; margin-top: 0.5rem;">
-                <a href="${document.file_url}" download class="download-link" style="color: #3b82f6; text-decoration: underline;">
+                <a href="${doc.file_url}" download class="download-link" style="color: #3b82f6; text-decoration: underline;">
                   Download original file
                 </a>
               </p>
@@ -163,21 +159,21 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
     return Math.max(1, Math.ceil(wordCount / 500)); // ~500 words per page
   };
 
-  const convertToHTML = async (document: AgendaDocument & { agenda_name: string; presenter?: any }): Promise<string> => {
-    const fileExtension = document.name.split('.').pop()?.toLowerCase() || '';
+  const convertToHTML = async (doc: AgendaDocument & { agenda_name: string; presenter?: any }): Promise<string> => {
+    const fileExtension = doc.name.split('.').pop()?.toLowerCase() || '';
     
     // For images - display directly
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(fileExtension)) {
       return `
         <div class="image-container" style="text-align: center; margin: 2rem 0;">
           <img 
-            src="${document.file_url}" 
-            alt="${document.name}" 
+            src="${doc.file_url}" 
+            alt="${doc.name}" 
             style="max-width: 100%; height: auto; max-height: 70vh; border: 1px solid #e5e7eb; border-radius: 0.5rem;"
             loading="lazy"
           />
           <div style="margin-top: 0.5rem; color: #6b7280; font-size: 0.875rem;">
-            ${document.name}
+            ${doc.name}
           </div>
         </div>
       `;
@@ -185,32 +181,32 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
 
     // For PDF files - use PDF.js for better rendering
     if (fileExtension === 'pdf') {
-      return await convertPDFToHTML(document);
+      return await convertPDFToHTML(doc);
     }
 
     // For Word documents - use Mammoth.js
     if (['doc', 'docx'].includes(fileExtension)) {
-      return await convertWordToHTML(document);
+      return await convertWordToHTML(doc);
     }
 
     // For Excel files - use SheetJS
     if (['xls', 'xlsx', 'csv'].includes(fileExtension)) {
-      return await convertExcelToHTML(document);
+      return await convertExcelToHTML(doc);
     }
 
     // For PowerPoint files - use preview approach
     if (['ppt', 'pptx'].includes(fileExtension)) {
-      return await convertPowerPointToHTML(document);
+      return await convertPowerPointToHTML(doc);
     }
 
     // For text files
     if (['txt', 'md'].includes(fileExtension)) {
       try {
-        const response = await fetch(document.file_url);
+        const response = await fetch(doc.file_url);
         const text = await response.text();
         return `
           <div class="text-document" style="font-family: 'Courier New', monospace; white-space: pre-wrap; background: #f8f9fa; padding: 2rem; border-radius: 0.5rem; border: 1px solid #e5e7eb;">
-            <h4 style="margin-top: 0; color: #374151;">${document.name}</h4>
+            <h4 style="margin-top: 0; color: #374151;">${doc.name}</h4>
             <hr style="margin: 1rem 0; border-color: #e5e7eb;">
             ${text}
           </div>
@@ -224,22 +220,32 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
     return `
       <div class="unsupported-format" style="text-align: center; padding: 3rem; color: #6b7280;">
         <div style="margin-bottom: 1rem;">
-          <File size={48} />
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14,2 14,8 20,8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10,9 9,9 8,9" />
+          </svg>
         </div>
-        <h4 style="margin-bottom: 0.5rem; color: #374151;">${document.name}</h4>
+        <h4 style="margin-bottom: 0.5rem; color: #374151;">${doc.name}</h4>
         <p style="font-size: 0.875rem; margin-bottom: 1rem;">Format: ${fileExtension.toUpperCase()}</p>
         <p style="font-size: 0.875rem; margin-bottom: 1.5rem; color: #9ca3af;">
           This file format cannot be previewed in the browser
         </p>
         <a 
-          href="${document.file_url}" 
+          href="${doc.file_url}" 
           download 
           class="download-button"
           style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; transition: background-color 0.2s;"
           onmouseover="this.style.backgroundColor='#2563eb'"
           onmouseout="this.style.backgroundColor='#3b82f6'"
         >
-          <Download size={16} />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7,10 12,15 17,10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
           Download File
         </a>
       </div>
@@ -247,18 +253,18 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   };
 
   // Convert PDF to HTML using PDF.js
-  const convertPDFToHTML = async (document: AgendaDocument): Promise<string> => {
+  const convertPDFToHTML = async (doc: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
       // Dynamically import PDF.js
       import('pdfjs-dist').then(pdfjsLib => {
         // Set worker path
         pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js`;
 
-        const loadingTask = pdfjsLib.getDocument(document.file_url);
+        const loadingTask = pdfjsLib.getDocument(doc.file_url);
         loadingTask.promise.then((pdf: any) => {
           let htmlContent = `
             <div class="pdf-document" style="text-align: center;">
-              <h4 style="color: #374151; margin-bottom: 1rem;">${document.name}</h4>
+              <h4 style="color: #374151; margin-bottom: 1rem;">${doc.name}</h4>
               <div class="pdf-pages" style="display: flex; flex-direction: column; align-items: center; gap: 1rem;">
           `;
 
@@ -270,7 +276,11 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
             pagePromises.push(
               pdf.getPage(i).then((page: any) => {
                 const viewport = page.getViewport({ scale: 1.0 });
-                const canvas = document.createElement('canvas');
+                // Use the browser's document object here
+                const canvas = global.document?.createElement('canvas');
+                if (!canvas) {
+                  return `<div>Canvas not available</div>`;
+                }
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
@@ -306,7 +316,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
                   <div style="margin-top: 1rem; padding: 1rem; background: #f3f4f6; border-radius: 0.5rem; color: #6b7280;">
                     <p style="margin: 0; font-size: 0.875rem;">
                       Showing first ${pageCount} pages. 
-                      <a href="${document.file_url}" download style="color: #3b82f6; text-decoration: underline;">
+                      <a href="${doc.file_url}" download style="color: #3b82f6; text-decoration: underline;">
                         Download full PDF
                       </a>
                       to view all ${pdf.numPages} pages.
@@ -323,17 +333,17 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   };
 
   // Convert Word documents to HTML using Mammoth.js
-  const convertWordToHTML = async (document: AgendaDocument): Promise<string> => {
+  const convertWordToHTML = async (doc: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
       import('mammoth').then(mammoth => {
-        fetch(document.file_url)
+        fetch(doc.file_url)
           .then(response => response.arrayBuffer())
           .then(arrayBuffer => {
             mammoth.convertToHtml({ arrayBuffer })
               .then((result: any) => {
                 const styledContent = `
                   <div class="word-document" style="font-family: 'Times New Roman', serif; line-height: 1.6; color: #374151; max-width: 100%;">
-                    <h4 style="color: #1f2937; margin-bottom: 1rem;">${document.name}</h4>
+                    <h4 style="color: #1f2937; margin-bottom: 1rem;">${doc.name}</h4>
                     <hr style="margin: 1rem 0; border-color: #e5e7eb;">
                     ${result.value}
                   </div>
@@ -348,10 +358,10 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   };
 
   // Convert Excel files to HTML using SheetJS
-  const convertExcelToHTML = async (document: AgendaDocument): Promise<string> => {
+  const convertExcelToHTML = async (doc: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
       import('xlsx').then(XLSX => {
-        fetch(document.file_url)
+        fetch(doc.file_url)
           .then(response => response.arrayBuffer())
           .then(arrayBuffer => {
             try {
@@ -359,8 +369,14 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
               let htmlContent = `
                 <div class="excel-document" style="max-width: 100%; overflow-x: auto;">
                   <h4 style="color: #1f2937; margin-bottom: 1rem;">
-                    <Table style="display: inline; margin-right: 0.5rem;" size={20} />
-                    ${document.name}
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display: inline; margin-right: 0.5rem;">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <line x1="3" y1="9" x2="21" y2="9" />
+                      <line x1="3" y1="15" x2="21" y2="15" />
+                      <line x1="9" y1="3" x2="9" y2="21" />
+                      <line x1="15" y1="3" x2="15" y2="21" />
+                    </svg>
+                    ${doc.name}
                   </h4>
                   <div style="margin-bottom: 1rem; color: #6b7280; font-size: 0.875rem;">
                     Workbook: ${workbook.SheetNames.length} sheet(s)
@@ -393,7 +409,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
                   <div style="padding: 1rem; background: #f3f4f6; border-radius: 0.5rem; color: #6b7280; text-align: center;">
                     <p style="margin: 0; font-size: 0.875rem;">
                       Showing first 3 sheets. 
-                      <a href="${document.file_url}" download style="color: #3b82f6; text-decoration: underline;">
+                      <a href="${doc.file_url}" download style="color: #3b82f6; text-decoration: underline;">
                         Download full Excel file
                       </a>
                       to view all ${workbook.SheetNames.length} sheets.
@@ -414,13 +430,19 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   };
 
   // Convert PowerPoint files to HTML using preview approach
-  const convertPowerPointToHTML = async (document: AgendaDocument): Promise<string> => {
+  const convertPowerPointToHTML = async (doc: AgendaDocument): Promise<string> => {
     return `
       <div class="powerpoint-document" style="text-align: center; padding: 2rem;">
         <div style="margin-bottom: 1rem;">
-          <Presentation size={48} color="#6b7280" />
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" color="#6b7280">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <line x1="8" y1="3" x2="8" y2="21" />
+            <line x1="16" y1="3" x2="16" y2="21" />
+            <line x1="3" y1="8" x2="21" y2="8" />
+            <line x1="3" y1="16" x2="21" y2="16" />
+          </svg>
         </div>
-        <h4 style="color: #1f2937; margin-bottom: 0.5rem;">${document.name}</h4>
+        <h4 style="color: #1f2937; margin-bottom: 0.5rem;">${doc.name}</h4>
         <p style="color: #6b7280; margin-bottom: 1.5rem;">
           PowerPoint Presentation
         </p>
@@ -431,24 +453,31 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
         </div>
         <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
           <a 
-            href="${document.file_url}" 
+            href="${doc.file_url}" 
             download 
             style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: #3b82f6; color: white; text-decoration: none; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; transition: background-color 0.2s;"
             onmouseover="this.style.backgroundColor='#2563eb'"
             onmouseout="this.style.backgroundColor='#3b82f6'"
           >
-            <Download size={16} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7,10 12,15 17,10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
             Download PowerPoint
           </a>
           <a 
-            href="https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(document.file_url)}" 
+            href="https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(doc.file_url)}" 
             target="_blank"
             rel="noopener noreferrer"
             style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: #10b981; color: white; text-decoration: none; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; transition: background-color 0.2s;"
             onmouseover="this.style.backgroundColor='#059669'"
             onmouseout="this.style.backgroundColor='#10b981'"
           >
-            <Eye size={16} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
             View Online
           </a>
         </div>
@@ -459,12 +488,12 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   const handleDownloadAll = () => {
     // Create a zip of all documents or download individually
     allDocuments.forEach(doc => {
-      const link = document.createElement('a');
+      const link = global.document.createElement('a');
       link.href = doc.file_url;
       link.download = doc.name;
-      document.body.appendChild(link);
+      global.document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      global.document.body.removeChild(link);
     });
   };
 

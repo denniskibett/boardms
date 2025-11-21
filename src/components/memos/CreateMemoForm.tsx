@@ -1,9 +1,9 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, ChangeEvent } from "react";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
-import { DocumentIcon, UploadIcon } from "@/icons";
+import { UploadIcon } from 'lucide-react';
 
 // Types for our entities
 interface Ministry {
@@ -130,12 +130,12 @@ export default function CreateMemoForm() {
     fetchAgencies();
   }, [formData.state_department_id]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFormData(prev => ({
         ...prev,
@@ -244,7 +244,7 @@ export default function CreateMemoForm() {
             value={formData.name}
             onChange={handleInputChange}
             placeholder="Enter memo title"
-            required
+            // required={true}
           />
         </div>
 
@@ -434,14 +434,12 @@ export default function CreateMemoForm() {
         {/* Action Buttons */}
         <div className="flex justify-end gap-4 pt-6 border-t border-gray-200 dark:border-gray-700">
           <Button
-            type="button"
             variant="outline"
             onClick={() => window.history.back()}
           >
             Cancel
           </Button>
           <Button
-            type="submit"
             disabled={isSubmitting}
           >
             {isSubmitting ? "Creating Memo..." : "Create Memo"}

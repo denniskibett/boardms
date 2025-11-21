@@ -5,14 +5,12 @@ import React, { useState } from 'react';
 import { useResources } from '@/hooks/useResources';
 import { 
   Plus, 
-  Folder, 
   Grid3X3,
   ListTree
 } from 'lucide-react';
-import ResourceForm from './ResourceForm';
+import ResourceForm from '@/components/resources/ResourceForm';
 import ResourceExplorer from './ResourceExplorer';
-import ResourcesGridView from './ResourcesGridView'; // We'll keep the original grid view as a separate component
-
+import ResourcesGridView from '@/components/resources/ResourcesGridView';
 interface ResourcesManagerProps {
   initialView?: 'explorer' | 'grid' | 'table';
 }

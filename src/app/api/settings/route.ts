@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabaseServer } from '@/lib/db';
 
 // Helper function to format UTC offset
 function formatUtcOffset(offset: any): string {

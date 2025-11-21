@@ -3,7 +3,7 @@ import Checkbox from "@/components/form/input/Checkbox";
 import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
-import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "@/icons";
+import { EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
 import React, { useState, useEffect } from "react";
 import { useRouter } from 'next/navigation';
@@ -11,10 +11,24 @@ import { signIn, getSession } from 'next-auth/react';
 import { getSystemStatus } from '@/lib/actions/auth';
 import ErrorModal from '@/components/ui/modal/ErrorModal';
 
+// Updated interface to match your Supabase system status
 interface SystemStatus {
-  database: { healthy: boolean; error?: string; users?: any[] };
-  users: { total: number; hasUsers: boolean; list: any[] };
-  environment: { nodeEnv: string; hasAuthSecret: boolean; hasDatabaseUrl: boolean };
+  database: { 
+    healthy: boolean; 
+    error?: string; 
+    users?: any[];
+  };
+  users: { 
+    total: number; 
+    hasUsers: boolean; 
+    list: any[] 
+  };
+  environment: { 
+    nodeEnv: string; 
+    hasAuthSecret: boolean; 
+    hasSupabaseUrl: boolean; 
+    hasSupabaseKey: boolean; 
+  };
 }
 
 export default function SignInForm() {
@@ -44,7 +58,7 @@ export default function SignInForm() {
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); // Prevent default form submission
+    e.preventDefault();
     setIsLoading(true);
     setError('');
     setShowErrorModal(false);
@@ -59,18 +73,16 @@ export default function SignInForm() {
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false, // Important: prevent automatic redirect
+        redirect: false,
       });
 
       console.log('📨 SignIn response:', result);
 
       if (result?.error) {
-        // Parse the detailed error from our enhanced auth system
         try {
           const errorData = JSON.parse(result.error);
           console.log('🔴 Parsed error details:', errorData);
           
-          // Format user-friendly message with details
           let userMessage = errorData.message;
           
           if (errorData.details?.availableUsers) {
@@ -85,7 +97,6 @@ export default function SignInForm() {
           setErrorDetails(errorData.details);
           setShowErrorModal(true);
         } catch (parseError) {
-          // If it's not our formatted error, return as is
           console.log('⚠️ Could not parse error, returning raw:', result.error);
           setError(result.error || 'Authentication failed');
           setErrorDetails({ rawError: result.error });
@@ -94,18 +105,14 @@ export default function SignInForm() {
       } else if (result?.ok) {
         console.log('✅ SignIn successful, checking session...');
         
-        // Wait a moment for the session to be set
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // Get the updated session
         const session = await getSession();
         console.log('🔍 Session after signin:', session);
         
         if (session) {
           console.log('🎯 Redirecting to dashboard...');
-          // Use router.push for client-side navigation (stays on same page until successful)
           router.push('/dashboard');
-          // Optional: Force refresh to ensure session is loaded
           setTimeout(() => {
             router.refresh();
           }, 100);
@@ -138,7 +145,6 @@ export default function SignInForm() {
     const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
     
     if (emailInput && passwordInput) {
-      // Use the first available user email or fallback to demo
       const firstUser = systemStatus?.users.list[0];
       if (firstUser) {
         emailInput.value = firstUser.email;
@@ -155,11 +161,9 @@ export default function SignInForm() {
     setErrorDetails(null);
   };
 
-  // Prevent any background navigation when modal is open
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
       if (showErrorModal) {
-        // If modal is open, prevent navigation
         window.history.pushState(null, '', window.location.href);
         event.preventDefault();
       }
@@ -178,15 +182,6 @@ export default function SignInForm() {
   return (
     <>
       <div className="flex flex-col flex-1 lg:w-1/2 w-full">
-        {/* <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
-          <Link
-            href="/"
-            className="inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
-          >
-            <ChevronLeftIcon />
-            Back to homepage
-          </Link>
-        </div> */}
         <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
           <div>
             <div className="mb-5 sm:mb-8 text-center">
@@ -207,7 +202,23 @@ export default function SignInForm() {
               </p>
             </div>
             
-            {/* Inline error message (small) */}
+            {/* Demo credentials button */}
+            {systemStatus && systemStatus.users.hasUsers && (
+              <div className="mb-4">
+                <button
+                  type="button"
+                  onClick={fillDemoCredentials}
+                  className="w-full px-4 py-2 text-sm text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-900/20"
+                >
+                  🚀 Fill Demo Credentials
+                </button>
+                <p className="mt-1 text-xs text-center text-gray-500">
+                  Uses first available user: {systemStatus.users.list[0]?.email}
+                </p>
+              </div>
+            )}
+            
+            {/* Inline error message */}
             {error && !showErrorModal && (
               <div className="p-3 mb-4 text-sm text-red-700 bg-red-100 border border-red-200 rounded-md dark:bg-red-900/20 dark:border-red-800 dark:text-red-300">
                 <strong>Error:</strong> {error.split('\n')[0]}
@@ -278,7 +289,6 @@ export default function SignInForm() {
                   <Button 
                     className="w-full" 
                     size="sm"
-                    type="submit"
                     disabled={isLoading || (systemStatus && !systemStatus.database.healthy) || showErrorModal}
                   >
                     {isLoading ? 'Signing in...' : 'Sign in'}
@@ -287,21 +297,23 @@ export default function SignInForm() {
               </div>
             </form>
 
-            <div className="mt-5">
-              {/* <p className="text-sm font-normal text-center text-gray-700 dark:text-gray-400">
-                Demo Access:{" "}
-                <button
-                  type="button"
-                  onClick={fillDemoCredentials}
-                  className="text-brand-500 hover:text-brand-600 dark:text-brand-400 underline"
-                  disabled={isLoading}
-                >
-                  Click to auto-fill credentials
-                </button>
-              </p> */}
+            {/* Database status messages */}
+            <div className="mt-5 space-y-2">
+              {systemStatus && !systemStatus.database.healthy && (
+                <p className="text-xs text-center text-red-500">
+                  ❌ Database connection failed: {systemStatus.database.error}
+                </p>
+              )}
+              
               {systemStatus && !systemStatus.users.hasUsers && (
-                <p className="text-xs text-center text-red-500 mt-2">
+                <p className="text-xs text-center text-red-500">
                   ⚠️ No users found in database. Run: npm run db:seed
+                </p>
+              )}
+              
+              {systemStatus && systemStatus.database.healthy && (
+                <p className="text-xs text-center text-green-500">
+                  ✅ Connected to Supabase - {systemStatus.users.total} users found
                 </p>
               )}
             </div>
@@ -309,7 +321,7 @@ export default function SignInForm() {
         </div>
       </div>
 
-      {/* Error Modal - This will block all navigation when open */}
+      {/* Error Modal */}
       <ErrorModal
         isOpen={showErrorModal}
         onClose={closeErrorModal}

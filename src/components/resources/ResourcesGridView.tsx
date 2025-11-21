@@ -6,13 +6,10 @@ import {
   Search,
   Folder,
   File,
-  Download,
-  Edit,
-  Trash2,
-  Upload,
   Users,
   BookOpen,
-  ChevronRight
+  ChevronRight,
+  Plus
 } from 'lucide-react';
 
 interface ResourcesGridViewProps {

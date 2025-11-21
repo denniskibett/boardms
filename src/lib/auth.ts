@@ -1,7 +1,8 @@
 // lib/auth.ts
-import { NextAuthOptions } from 'next-auth'
+import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { query, testConnection } from './db'
+import { query, testConnection } from '@/lib/db'
+import { supabaseServer } from '@/lib/supabase/server'  
 import bcrypt from 'bcryptjs'
 
 // Custom error types for granular error handling
@@ -69,55 +70,53 @@ async function checkDatabaseHealth() {
 async function verifyUserCredentials(email: string, password: string) {
   console.log('🔐 Authentication attempt for:', email)
   
-  // First, check database health
-  const dbHealth = await checkDatabaseHealth()
-  if (!dbHealth.healthy) {
-    throw new AuthError(
-      'Database connection issue. Please try again later.',
-      'DATABASE_ERROR',
-      { 
-        dbError: dbHealth.error,
-        availableUsers: dbHealth.users
-      }
-    )
-  }
-
   try {
-    // Query user from database with detailed logging
-    console.log('📊 Querying database for user:', email)
-    const result = await query(
-      'SELECT id, name, email, password, role, status FROM users WHERE email = $1',
-      [email.toLowerCase()]
-    )
+    const supabase = supabaseServer()
+    
+    // Query user from Supabase
+    console.log('📊 Querying Supabase for user:', email)
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .limit(1)
 
-    console.log('📈 Database query result:', {
-      rowsFound: result.rows.length,
-      userExists: result.rows.length > 0,
-      availableUsers: dbHealth.users.map((u: any) => ({
-        email: u.email,
-        name: u.name,
-        role: u.role,
-        status: u.status
-      }))
+    if (error) {
+      throw new AuthError(
+        'Database error during authentication.',
+        'DATABASE_ERROR',
+        { supabaseError: error.message }
+      )
+    }
+
+    console.log('📈 Supabase query result:', {
+      rowsFound: users?.length || 0,
+      userExists: (users?.length || 0) > 0
     })
 
     // Check if user exists
-    if (result.rows.length === 0) {
+    if (!users || users.length === 0) {
+      // Get all users for debugging
+      const { data: allUsers } = await supabase
+        .from('users')
+        .select('email, name, role, status')
+        .order('email')
+      
       throw new AuthError(
         'No account found with this email address.',
         'USER_NOT_FOUND',
         { 
           emailAttempted: email,
-          totalUsersInSystem: dbHealth.users.length,
-          availableUsers: dbHealth.users.map((u: any) => u.email),
-          suggestion: dbHealth.users.length === 0 ? 
+          totalUsersInSystem: allUsers?.length || 0,
+          availableUsers: allUsers?.map(u => u.email) || [],
+          suggestion: (allUsers?.length || 0) === 0 ? 
             'No users in database. Run seed script.' : 
-            `Available users: ${dbHealth.users.map((u: any) => u.email).join(', ')}`
+            `Available users: ${allUsers?.map(u => u.email).join(', ')}`
         }
       )
     }
 
-    const user = result.rows[0]
+    const user = users[0]
     console.log('👤 User found:', { 
       id: user.id, 
       name: user.name, 
@@ -139,15 +138,14 @@ async function verifyUserCredentials(email: string, password: string) {
       )
     }
 
-    // Verify password with detailed comparison
+    // Verify password
     console.log('🔑 Verifying password...')
     const isPasswordValid = await bcrypt.compare(password, user.password)
     
     console.log('📝 Password validation result:', {
       isValid: isPasswordValid,
       passwordLength: password.length,
-      storedHashLength: user.password.length,
-      passwordProvided: password
+      storedHashLength: user.password.length
     })
 
     if (!isPasswordValid) {
@@ -164,10 +162,10 @@ async function verifyUserCredentials(email: string, password: string) {
 
     // Update last login
     console.log('🕒 Updating last login timestamp...')
-    await query(
-      'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
-      [user.id]
-    )
+    await supabase
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', user.id)
 
     console.log('✅ Authentication successful for user:', user.email)
     
@@ -179,23 +177,22 @@ async function verifyUserCredentials(email: string, password: string) {
     }
   } catch (error) {
     if (error instanceof AuthError) {
-      throw error // Re-throw our custom errors
+      throw error
     }
     
-    // Handle unexpected database errors
-    console.error('💥 Unexpected database error:', error)
+    console.error('💥 Unexpected Supabase error:', error)
     throw new AuthError(
       'Database error during authentication. Please try again.',
       'DATABASE_ERROR',
       { 
-        originalError: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
+        originalError: error instanceof Error ? error.message : 'Unknown error'
       }
     )
   }
 }
 
-export const authOptions: NextAuthOptions = {
+// For NextAuth v4, we don't need to explicitly type authOptions
+export const authOptions = {
   providers: [
     CredentialsProvider({
       name: 'credentials',
@@ -260,14 +257,14 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: any; user?: any }) {
       if (user) {
         token.role = user.role
         token.id = user.id
       }
       return token
     },
-    async session({ session, token }) {
+    async session({ session, token }: { session: any; token: any }) {
       if (token) {
         session.user.id = token.id as string
         session.user.role = token.role as string
@@ -309,5 +306,5 @@ export async function getAuthSystemStatus() {
   }
 }
 
-// Export auth configuration for API routes
-export default authOptions
+// Don't export GET/POST from here - let the API route handle that
+// Remove this line: export { GET, POST } from '@/app/api/auth/[...nextauth]/route'

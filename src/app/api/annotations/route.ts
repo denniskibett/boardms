@@ -16,7 +16,6 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const annotationId = searchParams.get('id');
 
   // Delete annotation logic
   return NextResponse.json({ success: true });

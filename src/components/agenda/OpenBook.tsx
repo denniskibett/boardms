@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOpenBook } from '@/hooks/useOpenBook';
 import BookViewer from '@/components/agenda/BookViewer';
 import AgendaManager from '@/components/agenda/AgendaManager';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
 import AnnotationToolbar from '@/components/agenda/AnnotationToolbar';
-import DocumentUpload from './DocumentUpload';
 
 interface OpenBookProps {
   meetingId?: string;
@@ -21,9 +20,7 @@ export default function OpenBook({ meetingId }: OpenBookProps) {
   
   const {
     documents,
-    agendas,
-    uploadDocument,
-    addAgenda,
+    agendas,    addAgenda,
     updateAgenda,
     deleteAgenda,
     loading

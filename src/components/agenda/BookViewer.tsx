@@ -91,11 +91,13 @@ export default function BookViewer({
               }));
             } catch (error) {
               console.error('Error converting DOCX:', error);
+              // Type-safe error handling
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
               setDocxContent(prev => ({
                 ...prev,
                 [doc.id]: `<div class="error-message p-4 bg-red-50 border border-red-200 rounded">
                   <h3 class="text-red-800 font-semibold">Error Loading Document</h3>
-                  <p class="text-red-600">Failed to load Word document: ${error.message}</p>
+                  <p class="text-red-600">Failed to load Word document: ${errorMessage}</p>
                 </div>`
               }));
             } finally {
@@ -113,11 +115,13 @@ export default function BookViewer({
             }));
           } catch (error) {
             console.error('Error converting server DOCX:', error);
+            // Type-safe error handling
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             setDocxContent(prev => ({
               ...prev,
               [doc.id]: `<div class="error-message p-4 bg-red-50 border border-red-200 rounded">
                 <h3 class="text-red-800 font-semibold">Error Loading Document</h3>
-                <p class="text-red-600">Failed to load Word document from server: ${error.message}</p>
+                <p class="text-red-600">Failed to load Word document from server: ${errorMessage}</p>
               </div>`
             }));
           } finally {

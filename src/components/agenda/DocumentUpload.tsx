@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { Upload, FileText, X, Loader2 } from 'lucide-react';
+import { Upload, X, Loader2 } from 'lucide-react';
 
 interface DocumentUploadProps {
   onUpload: (file: File) => void;

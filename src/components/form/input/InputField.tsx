@@ -14,7 +14,9 @@ interface InputProps {
   disabled?: boolean;
   success?: boolean;
   error?: boolean;
-  hint?: string; // Optional hint text
+  hint?: string; 
+  value?: string;
+
 }
 
 const Input: FC<InputProps> = ({

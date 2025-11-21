@@ -1,17 +1,30 @@
-// app/api/resources/[id]/files/route.ts - UPDATED FOLDER STRUCTURE
+// app/api/resources/[id]/files/route.ts - UPDATED FOR NEXT.JS 14
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir, unlink } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { query } from '@/lib/db';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
+
+// Define session and user types
+interface User {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+}
+
+interface Session {
+  user: User;
+} 
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const resourceId = parseInt(params.id);
+    const { id } = await params;
+    const resourceId = parseInt(id);
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const ministryId = formData.get('ministryId') as string;
@@ -32,7 +45,7 @@ export async function POST(
       );
     }
 
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(authOptions) as Session | null;
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -153,13 +166,13 @@ export async function POST(
   }
 }
 
-// Add this to your existing app/api/resources/[id]/files/route.ts
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const resourceId = parseInt(params.id);
+    const { id } = await params;
+    const resourceId = parseInt(id);
     
     // Verify resource exists
     const resource = await query(
@@ -191,6 +204,124 @@ export async function GET(
     console.error('❌ Error fetching resource files:', error);
     return NextResponse.json(
       { error: 'Failed to fetch resource files' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/resources/[id]/files - Update file metadata
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const resourceId = parseInt(id);
+    const body = await request.json();
+    
+    const { fileId, displayName, ministryId } = body;
+
+    if (!fileId) {
+      return NextResponse.json(
+        { error: 'File ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const session = await getServerSession(authOptions) as Session | null;
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify file exists and belongs to this resource
+    const existingFile = await query(
+      'SELECT id FROM resource_files WHERE id = $1 AND resource_id = $2',
+      [fileId, resourceId]
+    );
+
+    if (existingFile.rows.length === 0) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
+
+    // Update file metadata
+    const result = await query(
+      `UPDATE resource_files 
+       SET display_name = $1, ministry_id = $2, updated_at = NOW()
+       WHERE id = $3 AND resource_id = $4
+       RETURNING *`,
+      [
+        displayName || null,
+        ministryId ? parseInt(ministryId) : null,
+        fileId,
+        resourceId
+      ]
+    );
+
+    const updatedFile = result.rows[0];
+    console.log('✅ File metadata updated:', updatedFile.id);
+
+    return NextResponse.json(updatedFile);
+
+  } catch (error: any) {
+    console.error('❌ Error updating file metadata:', error);
+    return NextResponse.json(
+      { error: 'Failed to update file metadata', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/resources/[id]/files - Delete a file
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const resourceId = parseInt(id);
+    const { searchParams } = new URL(request.url);
+    const fileId = searchParams.get('fileId');
+
+    if (!fileId) {
+      return NextResponse.json(
+        { error: 'File ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const session = await getServerSession(authOptions) as Session | null;
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Verify file exists and belongs to this resource
+    const existingFile = await query(
+      'SELECT id, file_url FROM resource_files WHERE id = $1 AND resource_id = $2',
+      [fileId, resourceId]
+    );
+
+    if (existingFile.rows.length === 0) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 });
+    }
+
+    const fileToDelete = existingFile.rows[0];
+
+    // Delete file record from database
+    await query(
+      'DELETE FROM resource_files WHERE id = $1 AND resource_id = $2',
+      [fileId, resourceId]
+    );
+
+    // TODO: Optionally delete the physical file from disk
+    // This would require additional logic to handle file deletion
+
+    console.log('🗑️ File deleted successfully:', fileId);
+    return NextResponse.json({ success: true, deletedFileId: fileId });
+
+  } catch (error: any) {
+    console.error('❌ Error deleting file:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete file', details: error.message },
       { status: 500 }
     );
   }

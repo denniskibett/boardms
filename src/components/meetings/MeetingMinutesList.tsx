@@ -2,7 +2,18 @@
 "use client";
 import React, { useState } from "react";
 
-const minutes = [
+interface Minute {
+  id: string;
+  meetingTitle: string;
+  committee: string;
+  date: string;
+  status: "draft" | "approved" | "pending";
+  attendees: number;
+  decisions: number;
+  preparedBy: string;
+}
+
+const minutes: Minute[] = [
   {
     id: "1",
     meetingTitle: "Infrastructure Committee Meeting",
@@ -42,11 +53,16 @@ const statusColors = {
 };
 
 export default function MeetingMinutesList() {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<string>("all");
 
   const filteredMinutes = minutes.filter(minute => 
     filter === "all" || minute.status === filter
   );
+
+  // Helper function to get status color class
+  const getStatusColor = (status: Minute["status"]) => {
+    return statusColors[status];
+  };
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xs border border-gray-200 dark:border-gray-700">
@@ -114,7 +130,7 @@ export default function MeetingMinutesList() {
                   {new Date(minute.date).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[minute.status]}`}>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(minute.status)}`}>
                     {minute.status.charAt(0).toUpperCase() + minute.status.slice(1)}
                   </span>
                 </td>

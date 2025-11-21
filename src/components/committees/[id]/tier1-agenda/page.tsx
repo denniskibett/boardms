@@ -1,126 +1,163 @@
-// app/(admin)/committees/[id]/tier1-agenda/page.tsx
 "use client";
-import React, { useState } from "react";
-import { useParams } from "next/navigation";
 
-export default function Tier1AgendaPage() {
-  const params = useParams();
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+
+interface User {
+  id: string;
+  name: string;
+}
+
+interface Meeting {
+  id: string;
+  name: string;
+  type: string;
+  start_at: string;
+  location: string;
+  status: string;
+}
+
+interface AgendaItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  presenter_id: string;
+  meeting_id: string;
+  meeting: Meeting;
+}
+
+interface Committee {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export default function Tier1AgendaPage({ params }: { params: { id: string } }) {
   const committeeId = params.id;
-  
-  const [agendaItems, setAgendaItems] = useState([
-    {
-      id: "1",
-      memoId: "MEM-001",
-      title: "Infrastructure Development Proposal for Northern Corridor",
-      ministry: "Ministry of Transport",
-      priority: "high",
-      status: "pending_review",
-      attachments: ["project-plan.pdf", "budget-breakdown.docx"],
-    },
-    {
-      id: "2", 
-      memoId: "MEM-006",
-      title: "Agricultural Subsidy Program",
-      ministry: "Ministry of Agriculture", 
-      priority: "medium",
-      status: "under_review",
-      attachments: ["subsidy-framework.pdf"],
-    }
-  ]);
 
-  const generateTier1Book = () => {
-    // Simulate PDF generation
-    alert("Tier 1 Agenda Book generated successfully!");
+  const [committee, setCommittee] = useState<Committee | null>(null);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch Committee
+  const fetchCommittee = async () => {
+    const res = await fetch(`/api/committees/${committeeId}`);
+    const data = await res.json();
+    setCommittee(data);
   };
 
+  // Fetch Tier 1 Agenda
+  const fetchAgenda = async () => {
+    const res = await fetch(`/api/committees/${committeeId}/tier1-agenda`);
+    const data = await res.json();
+    setAgendaItems(data);
+  };
+
+  // Fetch Users
+  const fetchUsers = async () => {
+    const res = await fetch("/api/users");
+    const data = await res.json();
+    setUsers(data);
+  };
+
+  useEffect(() => {
+    Promise.all([fetchCommittee(), fetchAgenda(), fetchUsers()]).then(() =>
+      setLoading(false)
+    );
+  }, []);
+
+  const getPresenterName = (id: string) => {
+    const user = users.find((u) => u.id === id);
+    return user ? user.name : "Unknown";
+  };
+
+  const statusColors: Record<string, string> = {
+    Pending: "bg-yellow-100 text-yellow-700",
+    Approved: "bg-green-100 text-green-700",
+    Rejected: "bg-red-100 text-red-700",
+  };
+
+  if (loading) {
+    return <div className="p-6 text-gray-500">Loading...</div>;
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Tier 1 Agenda Book - Infrastructure Committee
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Compile committee agenda items for upcoming meeting
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-            Add Memo
-          </button>
-          <button 
-            onClick={generateTier1Book}
-            className="rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600"
-          >
-            Generate Agenda Book
-          </button>
-        </div>
+    <div className="p-6 space-y-8">
+      {/* Committee Header */}
+      <div className="border-b pb-4">
+        <h1 className="text-2xl font-bold">{committee?.name}</h1>
+        <p className="text-gray-600">{committee?.description}</p>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-        <div className="border-b border-gray-200 p-6 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Agenda Items for Committee Review
-          </h2>
-        </div>
-        
-        <div className="p-6">
+      {/* Agenda List */}
+      <div className="space-y-6">
+        <h2 className="text-xl font-semibold">Tier 1 Agenda Items</h2>
+
+        {agendaItems.length === 0 ? (
+          <div className="p-4 bg-gray-100 rounded-lg text-gray-500">
+            No agenda items found.
+          </div>
+        ) : (
           <div className="space-y-4">
-            {agendaItems.map((item) => (
-              <div key={item.id} className="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+            {agendaItems.map((agenda) => (
+              <div
+                key={agenda.id}
+                className="p-4 border rounded-xl bg-white shadow-sm"
+              >
                 <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                        {item.title}
-                      </h3>
-                      <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-                        {item.priority}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Ministry: {item.ministry} • Memo: {item.memoId}
-                    </p>
-                    
-                    {item.attachments.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Attachments:</p>
-                        <div className="flex gap-2">
-                          {item.attachments.map((file, index) => (
-                            <span key={index} className="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-400">
-                              {file}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="ml-4 flex gap-2">
-                    <button className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-                      Review
-                    </button>
-                    <button className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600">
-                      Remove
-                    </button>
-                  </div>
+                  <h3 className="text-lg font-semibold">{agenda.title}</h3>
+
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      statusColors[agenda.status] || "bg-gray-200 text-gray-700"
+                    }`}
+                  >
+                    {agenda.status}
+                  </span>
                 </div>
+
+                {agenda.description && (
+                  <p className="text-gray-600 mt-1">{agenda.description}</p>
+                )}
+
+                {/* Presenter */}
+                <p className="mt-3">
+                  <span className="font-medium">Presenter:</span>{" "}
+                  {getPresenterName(agenda.presenter_id)}
+                </p>
+
+                {/* Meeting Link */}
+                <p className="mt-1">
+                  <span className="font-medium">Meeting:</span>{" "}
+                  <Link
+                    href={`/meetings/${agenda.meeting_id}`}
+                    className="text-blue-600 underline hover:text-blue-800"
+                  >
+                    {agenda.meeting?.name ?? agenda.meeting_id}
+                  </Link>
+                </p>
+
+                {/* Meeting Details */}
+                {agenda.meeting && (
+                  <div className="mt-3 text-sm text-gray-500">
+                    <p>
+                      <strong>Type:</strong> {agenda.meeting.type}
+                    </p>
+                    <p>
+                      <strong>Starts:</strong>{" "}
+                      {new Date(agenda.meeting.start_at).toLocaleString()}
+                    </p>
+                    <p>
+                      <strong>Location:</strong> {agenda.meeting.location}
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          
-          {agendaItems.length === 0 && (
-            <div className="py-12 text-center">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No agenda items</h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Add memos to create the committee agenda book
-              </p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

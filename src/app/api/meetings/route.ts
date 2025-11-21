@@ -1,4 +1,4 @@
-// app/api/meetings/route.ts
+// app/api/meetings/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 

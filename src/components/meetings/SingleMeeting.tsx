@@ -5,12 +5,9 @@ import {
   ArrowLeft,
   XCircle,
   Loader2,
-  Trash2,
   Download,
   BookOpen,
   File,
-  Eye,
-  CheckCircle2,
   X,
   ChevronLeft,
   ChevronRight,
@@ -24,7 +21,7 @@ import {
 } from 'lucide-react';
 import MeetingDetails from './MeetingDetails';
 import MeetingInvitees from './MeetingInvitees';
-import MeetingAgenda from './MeetingAgenda';
+import MeetingAgenda from '@/components/meetings/MeetingAgenda';
 import MeetingParticipants from '@/components/meetings/MeetingParticipants';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
 import FileIcon from '@/components/agenda/FileIcon';
