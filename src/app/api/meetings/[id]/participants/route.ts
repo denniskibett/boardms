@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
 
-// GET - Fetch meeting participants (both individuals and groups)
+// GET - Fetch meeting participants
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,7 +24,6 @@ export async function GET(
         rsvp_id,
         created_at,
         users (
-          id,
           auth_id,
           name,
           email,
@@ -41,7 +40,7 @@ export async function GET(
       throw individualError;
     }
 
-    // Fetch group participants with group details and members
+    // Fetch group participants with group details
     const { data: groupParticipants, error: groupError } = await supabase
       .from('meeting_participants')
       .select(`
@@ -55,21 +54,7 @@ export async function GET(
           id,
           name,
           created_at,
-          updated_at,
-          group_users (
-            id,
-            group_id,
-            user_id,
-            mandatory_id,
-            users (
-              id,
-              auth_id,
-              name,
-              email,
-              role,
-              image
-            )
-          )
+          updated_at
         )
       `)
       .eq('meeting_id', meetingId)
@@ -81,7 +66,49 @@ export async function GET(
       throw groupError;
     }
 
-    // Fetch RSVP statuses from categories table
+    // Fetch group members for group participants
+    const groupParticipantsWithMembers = await Promise.all(
+      (groupParticipants || []).map(async (participant) => {
+        if (!participant.groups) return participant;
+
+        // Fetch group members for this group
+        const { data: groupUsers, error: groupUsersError } = await supabase
+          .from('group_users')
+          .select(`
+            user_id,
+            users (
+              auth_id,
+              name,
+              email,
+              role,
+              image
+            )
+          `)
+          .eq('group_id', participant.groups.id);
+
+        if (groupUsersError) {
+          console.error(`❌ Error fetching group users for group ${participant.groups.id}:`, groupUsersError);
+          return participant;
+        }
+
+        return {
+          ...participant,
+          groups: {
+            ...participant.groups,
+            users: (groupUsers || []).map((gu: any) => ({
+              id: gu.users.auth_id, // UUID as primary ID
+              auth_id: gu.users.auth_id,
+              name: gu.users.name,
+              email: gu.users.email,
+              role: gu.users.role,
+              image: gu.users.image
+            }))
+          }
+        };
+      })
+    );
+
+    // Fetch RSVP statuses
     const { data: rsvpCategories, error: rsvpError } = await supabase
       .from('categories')
       .select('*')
@@ -102,12 +129,12 @@ export async function GET(
       return {
         id: participant.id.toString(),
         meeting_id: participant.meeting_id.toString(),
-        user_id: participant.user_id?.toString(),
+        user_id: participant.user_id, // UUID - keep as is
         group_id: null,
         rsvp_id: participant.rsvp_id?.toString() || null,
         type: 'individual' as const,
         user: participant.users ? {
-          id: participant.users.id.toString(),
+          id: participant.users.auth_id, // UUID as primary ID
           auth_id: participant.users.auth_id,
           name: participant.users.name,
           email: participant.users.email,
@@ -123,7 +150,7 @@ export async function GET(
     });
 
     // Format group participants
-    const formattedGroupParticipants = (groupParticipants || []).map(participant => {
+    const formattedGroupParticipants = (groupParticipantsWithMembers || []).map(participant => {
       const rsvpCategory = rsvpCategories?.find(cat => cat.id === participant.rsvp_id);
       
       return {
@@ -136,14 +163,7 @@ export async function GET(
         group: participant.groups ? {
           id: participant.groups.id.toString(),
           name: participant.groups.name,
-          users: participant.groups.group_users?.map((groupUser: any) => ({
-            id: groupUser.users.id.toString(),
-            auth_id: groupUser.users.auth_id,
-            name: groupUser.users.name,
-            email: groupUser.users.email,
-            role: groupUser.users.role,
-            image: groupUser.users.image
-          })) || []
+          users: participant.groups.users || []
         } : undefined,
         rsvp: rsvpCategory ? {
           id: rsvpCategory.id.toString(),
@@ -168,7 +188,7 @@ export async function GET(
   }
 }
 
-// POST - Add participants (users or groups) to meeting
+// POST - Add participants to meeting
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -178,17 +198,20 @@ export async function POST(
     const { user_ids, group_ids } = await request.json();
     const supabase = supabaseServer();
     
-    console.log(`🔄 Adding participants to meeting ${meetingId}:`, { user_ids, group_ids });
+    console.log(`🔄 Adding participants to meeting ${meetingId}:`, { 
+      user_ids_count: user_ids?.length || 0, 
+      group_ids_count: group_ids?.length || 0 
+    });
     
     const newParticipants = [];
     
-    // Add individual users
+    // Process individual users (UUIDs)
     if (user_ids && user_ids.length > 0) {
       const individualParticipants = await addIndividualParticipants(supabase, meetingId, user_ids);
       newParticipants.push(...individualParticipants);
     }
     
-    // Add groups (mass add all group members as individuals)
+    // Process groups (extract member UUIDs)
     if (group_ids && group_ids.length > 0) {
       const groupParticipants = await addGroupParticipants(supabase, meetingId, group_ids);
       newParticipants.push(...groupParticipants);
@@ -275,35 +298,44 @@ export async function DELETE(
   }
 }
 
-// ===== SUPABASE DATABASE OPERATIONS =====
+// ===== DATABASE OPERATIONS =====
 
+// FIXED: Add individual participants with UUID validation
 async function addIndividualParticipants(
   supabase: any, 
   meetingId: string, 
-  userIds: string[] // These are UUIDs (auth_ids)
+  userIds: string[] // Array of UUIDs
 ) {
   const newParticipants = [];
   
-  for (const userAuthId of userIds) {
-    // Check if participant already exists
+  for (const userId of userIds) {
+    // Validate UUID format
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      console.error(`❌ Invalid UUID format: ${userId}`);
+      continue;
+    }
+    
+    console.log(`🔄 Processing user UUID: ${userId}`);
+    
+    // Check if participant already exists - using UUID
     const { data: existingParticipant } = await supabase
       .from('meeting_participants')
       .select('id')
       .eq('meeting_id', meetingId)
-      .eq('user_id', userAuthId) // Use UUID directly
+      .eq('user_id', userId) // UUID comparison
       .single();
 
     if (existingParticipant) {
-      console.log(`⚠️ User ${userAuthId} already exists in meeting ${meetingId}`);
+      console.log(`⚠️ User ${userId} already exists in meeting ${meetingId}`);
       continue;
     }
 
-    // Insert new participant with UUID (no parseInt!)
+    // Insert new participant with UUID
     const { data: newParticipant, error } = await supabase
       .from('meeting_participants')
       .insert({
         meeting_id: parseInt(meetingId),
-        user_id: userAuthId, // Store UUID directly
+        user_id: userId, // Store UUID directly
         group_id: null,
         rsvp_id: null
       })
@@ -314,7 +346,6 @@ async function addIndividualParticipants(
         group_id,
         rsvp_id,
         users (
-          id,
           auth_id,
           name,
           email,
@@ -325,19 +356,19 @@ async function addIndividualParticipants(
       .single();
 
     if (error) {
-      console.error(`❌ Error adding user ${userAuthId} to meeting:`, error);
+      console.error(`❌ Error adding user ${userId} to meeting:`, error);
       continue;
     }
 
     const formattedParticipant = {
       id: newParticipant.id.toString(),
       meeting_id: newParticipant.meeting_id.toString(),
-      user_id: newParticipant.user_id?.toString(),
+      user_id: newParticipant.user_id, // UUID
       group_id: null,
       rsvp_id: newParticipant.rsvp_id?.toString() || null,
       type: 'individual' as const,
       user: newParticipant.users ? {
-        id: newParticipant.users.id.toString(),
+        id: newParticipant.users.auth_id, // UUID as primary ID
         auth_id: newParticipant.users.auth_id,
         name: newParticipant.users.name,
         email: newParticipant.users.email,
@@ -348,12 +379,13 @@ async function addIndividualParticipants(
     };
     
     newParticipants.push(formattedParticipant);
-    console.log(`✅ Added user ${userAuthId} to meeting ${meetingId}`);
+    console.log(`✅ Added user ${userId} to meeting ${meetingId}`);
   }
   
   return newParticipants;
 }
 
+// FIXED: Add group participants by extracting member UUIDs
 async function addGroupParticipants(
   supabase: any, 
   meetingId: string, 
@@ -362,15 +394,14 @@ async function addGroupParticipants(
   const newParticipants = [];
   
   for (const groupId of groupIds) {
-    console.log(`🔄 Processing group ${groupId} for mass add...`);
+    console.log(`🔄 Processing group ${groupId} for member extraction...`);
     
-    // First, get all users in this group
+    // Get all users in this group
     const { data: groupUsers, error: groupUsersError } = await supabase
       .from('group_users')
       .select(`
         user_id,
         users (
-          id,
           auth_id,
           name,
           email,
@@ -392,91 +423,27 @@ async function addGroupParticipants(
 
     console.log(`✅ Found ${groupUsers.length} users in group ${groupId}`);
 
-    // Mass add all group members as individual participants
-    const groupMemberParticipants = [];
-    let addedCount = 0;
-    let skippedCount = 0;
-    let errorCount = 0;
+    // Extract UUIDs from group members
+    const groupMemberUUIDs = groupUsers
+      .map(gu => gu.user_id) // This should be UUID
+      .filter(uuid => uuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid));
 
-    for (const groupUser of groupUsers) {
-      const userAuthId = groupUser.user_id; // This is the UUID
-      
-      // Check if user already exists in meeting
-      const { data: existingParticipant } = await supabase
-        .from('meeting_participants')
-        .select('id')
-        .eq('meeting_id', meetingId)
-        .eq('user_id', userAuthId)
-        .single();
-
-      if (existingParticipant) {
-        console.log(`⚠️ User ${userAuthId} from group ${groupId} already exists in meeting`);
-        skippedCount++;
-        continue;
-      }
-
-      // Add user to meeting
-      const { data: newParticipant, error } = await supabase
-        .from('meeting_participants')
-        .insert({
-          meeting_id: parseInt(meetingId),
-          user_id: userAuthId,
-          group_id: null, // Add as individual, not as group
-          rsvp_id: null
-        })
-        .select(`
-          id,
-          meeting_id,
-          user_id,
-          group_id,
-          rsvp_id,
-          users (
-            id,
-            auth_id,
-            name,
-            email,
-            role,
-            image
-          )
-        `)
-        .single();
-
-      if (error) {
-        console.error(`❌ Error adding user ${userAuthId} from group ${groupId}:`, error);
-        errorCount++;
-        continue;
-      }
-
-      const formattedParticipant = {
-        id: newParticipant.id.toString(),
-        meeting_id: newParticipant.meeting_id.toString(),
-        user_id: newParticipant.user_id?.toString(),
-        group_id: null,
-        rsvp_id: newParticipant.rsvp_id?.toString() || null,
-        type: 'individual' as const,
-        user: newParticipant.users ? {
-          id: newParticipant.users.id.toString(),
-          auth_id: newParticipant.users.auth_id,
-          name: newParticipant.users.name,
-          email: newParticipant.users.email,
-          role: newParticipant.users.role,
-          image: newParticipant.users.image
-        } : undefined,
-        rsvp: null
-      };
-      
-      groupMemberParticipants.push(formattedParticipant);
-      addedCount++;
-      console.log(`✅ Added user ${userAuthId} from group ${groupId} to meeting`);
+    if (groupMemberUUIDs.length === 0) {
+      console.log(`⚠️ No valid UUIDs found in group ${groupId}`);
+      continue;
     }
 
-    console.log(`📊 Group ${groupId} summary: ${addedCount} added, ${skippedCount} skipped, ${errorCount} errors`);
+    // Add group members as individual participants
+    const groupMemberParticipants = await addIndividualParticipants(supabase, meetingId, groupMemberUUIDs);
     newParticipants.push(...groupMemberParticipants);
+    
+    console.log(`📊 Group ${groupId}: Added ${groupMemberParticipants.length} members`);
   }
   
   return newParticipants;
 }
 
+// FIXED: Update participant RSVP
 async function updateParticipantRSVP(
   supabase: any, 
   participantId: string, 
@@ -529,6 +496,7 @@ async function updateParticipantRSVP(
   };
 }
 
+// FIXED: Remove participant
 async function removeParticipant(supabase: any, participantId: string) {
   const { error } = await supabase
     .from('meeting_participants')

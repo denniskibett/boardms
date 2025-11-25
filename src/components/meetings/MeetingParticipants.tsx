@@ -1,4 +1,3 @@
-// components/meetings/MeetingParticipants.tsx
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
@@ -15,7 +14,7 @@ import {
 } from 'lucide-react';
 
 interface User {
-  id: string;
+  id: string; // This should be auth_id (UUID)
   auth_id: string;
   name: string;
   email: string;
@@ -32,7 +31,7 @@ interface Group {
 interface MeetingParticipant {
   id: string;
   meeting_id: string;
-  user_id: string | null;
+  user_id: string | null; // UUID
   group_id: string | null;
   rsvp_id: string | null;
   type: 'individual' | 'group';
@@ -78,62 +77,168 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
 
-  // Refs to track loaded data and prevent duplicate API calls
   const hasLoadedRef = useRef({
     users: false,
     groups: false,
     rsvp: false,
     participants: false
   });
-  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Format participants to consistent structure
+  // FIXED: UUID validation helper
+  const isValidUUID = (id: string | null | undefined): boolean => {
+    if (!id) return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  };
+
+  // FIXED: Filter and validate users to only include those with valid UUIDs
+  const filterValidUsers = (users: any[]): User[] => {
+    return users
+      .filter(user => user && isValidUUID(user.auth_id))
+      .map(user => ({
+        ...user,
+        id: user.auth_id, // Use auth_id as primary ID
+        auth_id: user.auth_id // Keep original
+      }));
+  };
+
+  // FIXED: Format participants with UUID validation
   const formatParticipants = useCallback((participantsData: any[]): MeetingParticipant[] => {
-    return participantsData.map(participant => ({
-      id: participant.id?.toString(),
-      meeting_id: participant.meeting_id?.toString(),
-      user_id: participant.user_id?.toString() || null,
-      group_id: participant.group_id?.toString() || null,
-      rsvp_id: participant.rsvp_id?.toString() || participant.rsvp_status?.id?.toString() || null,
-      type: participant.group_id ? 'group' : 'individual',
-      user: participant.user || participant.user_data,
-      group: participant.group,
-      rsvp: participant.rsvp || participant.rsvp_status
-    }));
+    console.log('🔄 Formatting participants data:', participantsData);
+    
+    return participantsData
+      .filter(participant => {
+        // Only include participants with valid UUID user_id or group participants
+        const isValid = participant.type === 'group' || 
+                       (participant.type === 'individual' && isValidUUID(participant.user_id));
+        
+        if (!isValid) {
+          console.warn('⚠️ Filtering out invalid participant:', participant);
+        }
+        
+        return isValid;
+      })
+      .map(participant => {
+        let userImage = undefined;
+        if (participant.user?.image) {
+          userImage = participant.user.image.startsWith('/') 
+            ? participant.user.image 
+            : `/meetings/${participant.user.image}`;
+        }
+
+        const formatted: MeetingParticipant = {
+          id: participant.id?.toString(),
+          meeting_id: participant.meeting_id?.toString(),
+          user_id: participant.user_id || null,
+          group_id: participant.group_id?.toString() || null,
+          rsvp_id: participant.rsvp_id?.toString() || participant.rsvp_status?.id?.toString() || null,
+          type: participant.group_id ? 'group' : 'individual',
+          user: participant.user ? {
+            id: participant.user.auth_id,
+            auth_id: participant.user.auth_id,
+            name: participant.user.name,
+            email: participant.user.email,
+            role: participant.user.role,
+            image: userImage
+          } : undefined,
+          group: participant.group,
+          rsvp: participant.rsvp || participant.rsvp_status
+        };
+
+        console.log(`📝 Participant ${formatted.id}:`, {
+          type: formatted.type,
+          user_id: formatted.user_id,
+          user: formatted.user?.name,
+          rsvp_id: formatted.rsvp_id
+        });
+
+        return formatted;
+      });
   }, []);
 
-  // Sync with parent component's participants
-  useEffect(() => {
-    if (initialParticipants && initialParticipants.length > 0) {
-      console.log('🔄 Syncing participants from parent:', initialParticipants.length);
-      const formattedParticipants = formatParticipants(initialParticipants);
-      setParticipants(formattedParticipants);
-      hasLoadedRef.current.participants = true;
-    }
-  }, [initialParticipants, formatParticipants]);
-
-  // Load all required data in a single optimized function
-  const loadRequiredData = useCallback(async () => {
-    // Cancel any ongoing requests
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    abortControllerRef.current = new AbortController();
-    const signal = abortControllerRef.current.signal;
-
+  // FIXED: Data loading with UUID validation
+  const reloadAllData = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('🔄 Loading required data for participants...');
+      console.log('🔄 Reloading all data with UUID validation...');
+      
+      hasLoadedRef.current = {
+        users: false,
+        groups: false,
+        rsvp: false,
+        participants: false
+      };
 
-      // Create a single promise for all data fetches
+      const [participantsRes, usersRes, groupsRes, rsvpRes] = await Promise.all([
+        fetch(`/api/meetings/${meetingId}/participants`).then(res => {
+          if (!res.ok) throw new Error(`Participants API error: ${res.status}`);
+          return res.json();
+        }),
+        fetch('/api/users?role=all').then(res => {
+          if (!res.ok) throw new Error(`Users API error: ${res.status}`);
+          return res.json();
+        }),
+        fetch('/api/groups').then(res => {
+          if (!res.ok) throw new Error(`Groups API error: ${res.status}`);
+          return res.json();
+        }),
+        fetch('/api/categories?type=rsvp_status').then(res => {
+          if (!res.ok) throw new Error(`RSVP API error: ${res.status}`);
+          return res.json();
+        })
+      ]);
+
+      // FIXED: Filter and validate users
+      const validUsers = filterValidUsers(Array.isArray(usersRes) ? usersRes : []);
+      console.log(`✅ Valid users with UUIDs: ${validUsers.length} (filtered from ${usersRes.length})`);
+
+      // FIXED: Transform groups to ensure user IDs are valid UUIDs
+      const validGroups = Array.isArray(groupsRes) ? groupsRes.map(group => ({
+        ...group,
+        users: filterValidUsers(group.users || [])
+      })) : [];
+
+      const formattedParticipants = formatParticipants(participantsRes);
+      setParticipants(formattedParticipants);
+      setAvailableUsers(validUsers);
+      setAvailableGroups(validGroups);
+      setRsvpOptions(Array.isArray(rsvpRes) ? rsvpRes : []);
+      
+      hasLoadedRef.current = {
+        users: true,
+        groups: true,
+        rsvp: true,
+        participants: true
+      };
+
+      console.log('✅ All data reloaded with UUID validation:', {
+        participants: formattedParticipants.length,
+        users: validUsers.length,
+        groups: validGroups.length,
+        rsvp: rsvpRes.length
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Error reloading data:', error);
+      alert(`Failed to reload data: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [meetingId, formatParticipants]);
+
+  const loadRequiredData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      console.log('🔄 Loading required data with UUID validation...');
+
       const dataPromises = [];
 
-      // Only fetch data that hasn't been loaded yet
       if (!hasLoadedRef.current.participants && initialParticipants.length === 0) {
         dataPromises.push(
-          fetch(`/api/meetings/${meetingId}/participants`, { signal })
-            .then(res => res.json())
+          fetch(`/api/meetings/${meetingId}/participants`)
+            .then(res => {
+              if (!res.ok) throw new Error(`Participants API error: ${res.status}`);
+              return res.json();
+            })
             .then(data => {
               const formatted = formatParticipants(data);
               setParticipants(formatted);
@@ -145,45 +250,48 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
 
       if (!hasLoadedRef.current.users) {
         dataPromises.push(
-          fetch('/api/users?role=all', { signal })
-            .then(res => res.json())
+          fetch('/api/users?role=all')
+            .then(res => {
+              if (!res.ok) throw new Error(`Users API error: ${res.status}`);
+              return res.json();
+            })
             .then(data => {
-              setAvailableUsers(Array.isArray(data) ? data : []);
+              // FIXED: Filter and validate users
+              const validUsers = filterValidUsers(Array.isArray(data) ? data : []);
+              setAvailableUsers(validUsers);
               hasLoadedRef.current.users = true;
-              console.log('✅ Users loaded:', data.length);
+              console.log('✅ Valid users loaded with UUIDs:', validUsers.length);
             })
         );
       }
 
       if (!hasLoadedRef.current.groups) {
         dataPromises.push(
-          fetch('/api/groups', { signal })
+          fetch('/api/groups')
             .then(res => {
-              if (!res.ok) {
-                throw new Error(`Groups API error: ${res.status}`);
-              }
+              if (!res.ok) throw new Error(`Groups API error: ${res.status}`);
               return res.json();
             })
             .then(data => {
-              // Ensure data is always an array
-              const groupsData = Array.isArray(data) ? data : [];
+              // FIXED: Transform groups to ensure UUID validation
+              const groupsData = Array.isArray(data) ? data.map(group => ({
+                ...group,
+                users: filterValidUsers(group.users || [])
+              })) : [];
               setAvailableGroups(groupsData);
               hasLoadedRef.current.groups = true;
-              console.log('✅ Groups loaded:', groupsData.length);
-            })
-            .catch(error => {
-              console.error('❌ Error loading groups:', error);
-              // Set empty array instead of failing completely
-              setAvailableGroups([]);
-              hasLoadedRef.current.groups = true;
+              console.log('✅ Groups loaded with validated users:', groupsData.length);
             })
         );
       }
 
       if (!hasLoadedRef.current.rsvp) {
         dataPromises.push(
-          fetch('/api/categories?type=rsvp_status', { signal })
-            .then(res => res.json())
+          fetch('/api/categories?type=rsvp_status')
+            .then(res => {
+              if (!res.ok) throw new Error(`RSVP API error: ${res.status}`);
+              return res.json();
+            })
             .then(data => {
               setRsvpOptions(Array.isArray(data) ? data : []);
               hasLoadedRef.current.rsvp = true;
@@ -192,86 +300,97 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         );
       }
 
-      // Wait for all data to load
       await Promise.all(dataPromises);
-      console.log('✅ All required data loaded successfully');
+      console.log('✅ All required data loaded with UUID validation');
 
     } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('📝 Data loading cancelled');
-        return;
-      }
       console.error('❌ Error loading data:', error);
+      alert(`Failed to load data: ${error.message}`);
     } finally {
       setIsLoading(false);
-      abortControllerRef.current = null;
     }
   }, [meetingId, initialParticipants, formatParticipants]);
 
-  // Initial data load
+  useEffect(() => {
+    if (initialParticipants && initialParticipants.length > 0) {
+      console.log('🔄 Syncing participants from parent:', initialParticipants.length);
+      const formattedParticipants = formatParticipants(initialParticipants);
+      setParticipants(formattedParticipants);
+      hasLoadedRef.current.participants = true;
+    }
+  }, [initialParticipants, formatParticipants]);
+
   useEffect(() => {
     if (meetingId) {
       loadRequiredData();
     }
-
-    // Cleanup function
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
   }, [meetingId, loadRequiredData]);
 
-  // Filter available users and groups based on search - WITH SAFETY CHECKS
-  const filteredUsers = (Array.isArray(availableUsers) ? availableUsers : [])
+  // FIXED: Filter available users and groups with UUID validation
+  const filteredUsers = availableUsers
     .filter(user => 
       user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user?.role?.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .filter(user => 
-      !participants.some(p => p.user_id === user.id)
+      !participants.some(p => p.user_id === user.id) // UUID comparison
     );
 
-  const filteredGroups = (Array.isArray(availableGroups) ? availableGroups : [])
+  const filteredGroups = availableGroups
     .filter(group =>
       group?.name?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    .filter(group =>
-      !participants.some(p => p.group_id === group.id)
-    );
+    .filter(group => {
+      if (!group.users || group.users.length === 0) return false;
+      
+      const usersNotInMeeting = group.users.filter(user => 
+        !participants.some(p => p.user_id === user.id) // UUID comparison
+      );
+      
+      return usersNotInMeeting.length > 0;
+    });
 
-  // Stable add participants function
+  // FIXED: Add participants with UUID validation
   const addParticipants = useCallback(async () => {
     if (selectedUsers.length === 0 && selectedGroups.length === 0) return;
 
     try {
       setIsAdding(true);
       
-      // For groups, we need to extract all individual user auth_ids
+      console.log('🔄 Adding participants with UUID validation:', {
+        selectedUsers,
+        selectedGroups
+      });
+
+      // Extract users from groups + individual selections
       let allUserIds = [...selectedUsers];
       
       if (selectedGroups.length > 0) {
-        // For each selected group, get all member user auth_ids
         selectedGroups.forEach(groupId => {
           const group = availableGroups.find(g => g.id === groupId);
           if (group?.users) {
-            // Group users now have auth_id as their id (from the fixed API)
-            const groupUserIds = group.users.map(user => user.id);
+            console.log(`📝 Processing group ${group.name}:`, group.users);
+            
+            // Use ONLY validated UUIDs
+            const groupUserIds = group.users
+              .map(user => user.auth_id)
+              .filter(uuid => isValidUUID(uuid));
+            
             allUserIds = [...allUserIds, ...groupUserIds];
           }
         });
       }
 
-      // Remove duplicates
-      allUserIds = [...new Set(allUserIds)];
+      // Remove duplicates and validate UUIDs
+      allUserIds = [...new Set(allUserIds)].filter(id => isValidUUID(id));
 
-      console.log('🔄 Adding participants:', {
-        selectedUsers,
-        selectedGroups, 
-        allUserIds,
-        availableGroups: availableGroups.map(g => ({ id: g.id, name: g.name, userCount: g.users?.length }))
-      });
+      console.log('📤 Final validated UUIDs to add:', allUserIds);
+
+      if (allUserIds.length === 0) {
+        alert('No valid users to add. Please check that your selections contain users with valid UUIDs.');
+        return;
+      }
 
       const response = await fetch(`/api/meetings/${meetingId}/participants`, {
         method: 'POST',
@@ -279,40 +398,55 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_ids: allUserIds, // Now all are UUIDs (auth_ids)
-          group_ids: [], // We're adding individuals instead of groups
+          user_ids: allUserIds,
+          group_ids: [],
         }),
       });
 
-      if (response.ok) {
-        const newParticipantsData = await response.json();
-        const formattedNewParticipants = formatParticipants(newParticipantsData);
-        
-        const updatedParticipants = [...participants, ...formattedNewParticipants];
-        setParticipants(updatedParticipants);
-        setSelectedUsers([]);
-        setSelectedGroups([]);
-        setSearchTerm('');
-        
-        // Notify parent component
-        if (onParticipantsUpdate) {
-          onParticipantsUpdate(updatedParticipants);
-        }
+      const responseData = await response.json();
 
-        console.log('✅ Participants added successfully');
-      } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to add participants');
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(`Meeting not found. Please refresh the page and try again.`);
+        }
+        throw new Error(responseData.error || 'Failed to add participants');
       }
+
+      if (responseData.length === 0) {
+        alert('No participants were added. They may already be in the meeting.');
+        return;
+      }
+
+      const formattedNewParticipants = formatParticipants(responseData);
+      
+      const updatedParticipants = [...participants, ...formattedNewParticipants];
+      setParticipants(updatedParticipants);
+      setSelectedUsers([]);
+      setSelectedGroups([]);
+      setSearchTerm('');
+      
+      if (onParticipantsUpdate) {
+        onParticipantsUpdate(updatedParticipants);
+      }
+
+      console.log('✅ Participants added successfully:', formattedNewParticipants.length);
+      
+      if (formattedNewParticipants.length > 0) {
+        alert(`Successfully added ${formattedNewParticipants.length} participants to the meeting.`);
+      }
+      
+      await reloadAllData();
+      
     } catch (error: any) {
       console.error('❌ Error adding participants:', error);
       alert(error.message || 'Failed to add participants.');
     } finally {
       setIsAdding(false);
     }
-  }, [meetingId, selectedUsers, selectedGroups, participants, availableGroups, formatParticipants, onParticipantsUpdate]);
+  }, [meetingId, selectedUsers, selectedGroups, participants, availableGroups, formatParticipants, onParticipantsUpdate, reloadAllData]);
 
-  // Stable remove participant function
+  // ... (rest of the functions remain the same - removeParticipant, updateParticipantRsvp, etc.)
+
   const removeParticipant = useCallback(async (participantId: string) => {
     if (!confirm('Are you sure you want to remove this participant?')) return;
 
@@ -321,26 +455,27 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         method: 'DELETE',
       });
 
-      if (response.ok) {
-        const updatedParticipants = participants.filter(p => p.id !== participantId);
-        setParticipants(updatedParticipants);
-        
-        if (onParticipantsUpdate) {
-          onParticipantsUpdate(updatedParticipants);
-        }
-        
-        console.log('✅ Participant removed:', participantId);
-      } else {
+      if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to remove participant');
       }
+
+      const updatedParticipants = participants.filter(p => p.id !== participantId);
+      setParticipants(updatedParticipants);
+      
+      if (onParticipantsUpdate) {
+        onParticipantsUpdate(updatedParticipants);
+      }
+      
+      console.log('✅ Participant removed:', participantId);
+      await reloadAllData();
+      
     } catch (error: any) {
       console.error('❌ Error removing participant:', error);
       alert(error.message || 'Failed to remove participant');
     }
-  }, [meetingId, participants, onParticipantsUpdate]);
+  }, [meetingId, participants, onParticipantsUpdate, reloadAllData]);
 
-  // Stable RSVP update function
   const updateParticipantRsvp = useCallback(async (participantId: string, rsvpId: string) => {
     try {
       const response = await fetch(`/api/meetings/${meetingId}/participants`, {
@@ -354,33 +489,33 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         }),
       });
 
-      if (response.ok) {
-        const updatedParticipantData = await response.json();
-        
-        const updatedParticipants = participants.map(p => 
-          p.id === participantId 
-            ? { ...p, rsvp_id: rsvpId, rsvp: updatedParticipantData.rsvp }
-            : p
-        );
-        
-        setParticipants(updatedParticipants);
-        
-        if (onParticipantsUpdate) {
-          onParticipantsUpdate(updatedParticipants);
-        }
-        
-        console.log('✅ RSVP updated for participant:', participantId);
-      } else {
+      if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to update RSVP');
       }
+
+      const updatedParticipantData = await response.json();
+      
+      const updatedParticipants = participants.map(p => 
+        p.id === participantId 
+          ? { ...p, rsvp_id: rsvpId, rsvp: updatedParticipantData.rsvp }
+          : p
+      );
+      
+      setParticipants(updatedParticipants);
+      
+      if (onParticipantsUpdate) {
+        onParticipantsUpdate(updatedParticipants);
+      }
+      
+      console.log('✅ RSVP updated for participant:', participantId);
+      
     } catch (error: any) {
       console.error('❌ Error updating RSVP:', error);
       alert(error.message || 'Failed to update RSVP status');
     }
   }, [meetingId, participants, onParticipantsUpdate]);
 
-  // Toggle user/group selection
   const toggleUserSelection = useCallback((userId: string) => {
     setSelectedUsers(prev => 
       prev.includes(userId) 
@@ -397,23 +532,16 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     );
   }, []);
 
-  // Manual refresh function
   const handleManualRefresh = useCallback(async () => {
+    console.log('🔄 Manual refresh triggered');
+    
     if (onRefresh) {
       await onRefresh();
-    } else {
-      // Reset loaded flags to force reload
-      hasLoadedRef.current = {
-        users: false,
-        groups: false,
-        rsvp: false,
-        participants: false
-      };
-      await loadRequiredData();
     }
-  }, [onRefresh, loadRequiredData]);
+    
+    await reloadAllData();
+  }, [onRefresh, reloadAllData]);
 
-  // Get RSVP status badge
   const getRsvpBadge = useCallback((rsvpType: string) => {
     const baseClasses = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
     
@@ -429,7 +557,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     }
   }, []);
 
-  // Get role badge color
   const getRoleBadge = useCallback((role: string) => {
     const baseClasses = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
     
@@ -447,20 +574,17 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     }
   }, []);
 
-  // Get RSVP status name
   const getRsvpStatusName = useCallback((rsvpId: string | null) => {
     if (!rsvpId) return 'Pending';
     const rsvp = rsvpOptions.find(r => r.id === rsvpId);
     return rsvp?.name || 'Pending';
   }, [rsvpOptions]);
 
-  // Get user initials for avatar
   const getInitials = useCallback((name: string) => {
     if (!name) return "?";
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   }, []);
 
-  // Get total count including group members
   const getTotalAttendeeCount = useCallback(() => {
     let count = 0;
     participants.forEach(participant => {
@@ -472,6 +596,25 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     });
     return count;
   }, [participants]);
+
+  const getParticipantStats = useCallback(() => {
+    const individualCount = participants.filter(p => p.type === 'individual').length;
+    const groupCount = participants.filter(p => p.type === 'group').length;
+    const acceptedCount = participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Accepted').length;
+    const declinedCount = participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Declined').length;
+    const pendingCount = participants.filter(p => !p.rsvp_id || getRsvpStatusName(p.rsvp_id) === 'Pending').length;
+
+    return {
+      individualCount,
+      groupCount,
+      acceptedCount,
+      declinedCount,
+      pendingCount,
+      totalAttendees: getTotalAttendeeCount()
+    };
+  }, [participants, getRsvpStatusName, getTotalAttendeeCount]);
+
+  const stats = getParticipantStats();
 
   if (isLoading && participants.length === 0) {
     return (
@@ -497,7 +640,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
           <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3 text-center">
             <UserCheck className="h-5 w-5 text-green-600 dark:text-green-400 mx-auto mb-1" />
             <p className="text-lg font-bold text-gray-900 dark:text-white">
-              {participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Accepted').length}
+              {stats.acceptedCount}
             </p>
             <p className="text-xs text-gray-600 dark:text-gray-400">Accepted</p>
           </div>
@@ -512,7 +655,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 Meeting Participants
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Manage individual users and groups • Total: {participants.length}
+                {stats.individualCount} individual(s) • {stats.groupCount} group(s) • Total: {participants.length}
               </p>
             </div>
             <button
@@ -527,6 +670,42 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               )}
               Refresh
             </button>
+          </div>
+
+          {/* Enhanced Debug Section */}
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-xs">
+            <h4 className="font-semibold text-yellow-800 mb-2">Debug Info:</h4>
+            <div className="grid grid-cols-2 gap-2">
+              <div>Participants: {participants.length}</div>
+              <div>Available Users: {availableUsers.length}</div>
+              <div>Available Groups: {availableGroups.length}</div>
+              <div>Filtered Groups: {filteredGroups.length}</div>
+              <div>Selected Users: {selectedUsers.length}</div>
+              <div>Selected Groups: {selectedGroups.length}</div>
+            </div>
+            <div className="mt-2">
+              <div>Participant Breakdown:</div>
+              <div>• Individual: {stats.individualCount}</div>
+              <div>• Groups: {stats.groupCount}</div>
+              <div>• Total Attendees: {stats.totalAttendees}</div>
+            </div>
+            <div className="mt-2">
+              <div>Group Analysis:</div>
+              {availableGroups.map((group, index) => {
+                const existingMembers = group.users?.filter(user => 
+                  participants.some(p => p.user_id === user.id)
+                ) || [];
+                const newMembers = group.users?.filter(user => 
+                  !participants.some(p => p.user_id === user.id)
+                ) || [];
+                
+                return (
+                  <div key={group.id} className="text-xs mt-1">
+                    {group.name}: {existingMembers.length} existing, {newMembers.length} new members
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Add Participants Section */}
@@ -569,6 +748,9 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                   }`}
                 >
                   Groups ({filteredGroups.length})
+                  {availableGroups.length > 0 && filteredGroups.length === 0 && (
+                    <span className="ml-1 text-xs text-orange-500">(all members added)</span>
+                  )}
                 </button>
               </div>
 
@@ -673,6 +855,14 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 <div className="flex items-center justify-between pt-2">
                   <p className="text-sm text-blue-600 dark:text-blue-400">
                     {selectedUsers.length} user(s) and {selectedGroups.length} group(s) selected
+                    {selectedGroups.length > 0 && (
+                      <span className="block text-xs text-gray-500">
+                        ({selectedGroups.reduce((total, groupId) => {
+                          const group = availableGroups.find(g => g.id === groupId);
+                          return total + (group?.users?.length || 0);
+                        }, 0)} total users from groups)
+                      </span>
+                    )}
                   </p>
                   <button
                     onClick={addParticipants}
@@ -691,7 +881,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             </div>
           </div>
 
-          {/* Rest of the component remains the same... */}
           {/* Participants List */}
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
             <div className="p-6 border-b border-gray-200 dark:border-gray-600">
@@ -702,15 +891,15 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1">
                     <UserCheck className="h-4 w-4 text-green-500" />
-                    {participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Accepted').length}
+                    {stats.acceptedCount}
                   </span>
                   <span className="flex items-center gap-1">
                     <UserX className="h-4 w-4 text-red-500" />
-                    {participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Declined').length}
+                    {stats.declinedCount}
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="h-4 w-4 text-yellow-500" />
-                    {participants.filter(p => !p.rsvp_id || getRsvpStatusName(p.rsvp_id) === 'Pending').length}
+                    {stats.pendingCount}
                   </span>
                 </div>
               </div>
@@ -837,14 +1026,14 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
               <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{getTotalAttendeeCount()}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalAttendees}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Total Attendees</p>
             </div>
             
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
               <UserCheck className="h-6 w-6 text-green-500 mx-auto mb-2" />
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Accepted').length}
+                {stats.acceptedCount}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Accepted</p>
             </div>
@@ -852,7 +1041,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
               <UserX className="h-6 w-6 text-red-500 mx-auto mb-2" />
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Declined').length}
+                {stats.declinedCount}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Declined</p>
             </div>
@@ -860,7 +1049,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
               <Clock className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {participants.filter(p => !p.rsvp_id || getRsvpStatusName(p.rsvp_id) === 'Pending').length}
+                {stats.pendingCount}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Pending</p>
             </div>

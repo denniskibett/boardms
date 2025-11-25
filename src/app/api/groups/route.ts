@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = supabaseServer();
     
-    console.log('🔄 Fetching groups with members (both UUIDs)...');
+    console.log('🔄 Fetching groups with members (UUIDs only)...');
 
     // First, fetch all groups
     const { data: groups, error: groupsError } = await supabase
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       const { data: usersData, error: usersError } = await supabase
         .from('users')
         .select('id, auth_id, name, email, role, image')
-        .in('auth_id', userUuids); // Query by auth_id (UUID) instead of id (integer)
+        .in('auth_id', userUuids);
 
       if (usersError) {
         console.error('❌ Error fetching users by UUID:', usersError);
@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
         .map(gu => {
           const user = allUsers.find(u => u.auth_id === gu.user_id);
           return user ? {
-            id: user.id, // Use the database ID, not auth_id
+            id: user.auth_id, // Use UUID as ID for consistency
             auth_id: user.auth_id,
             name: user.name,
             email: user.email,
@@ -124,11 +124,11 @@ export async function POST(request: NextRequest) {
       throw groupError;
     }
 
-    // Add users to the group if provided
+    // Add users to the group if provided - use UUIDs directly
     if (user_ids && user_ids.length > 0) {
-      const groupUsers = user_ids.map((userId: string) => ({
+      const groupUsers = user_ids.map((userAuthId: string) => ({
         group_id: newGroup.id,
-        user_id: parseInt(userId)
+        user_id: userAuthId // Store UUID directly, no parseInt
       }));
 
       const { error: usersError } = await supabase
