@@ -9,7 +9,10 @@
     "lint": "next lint",
     "db:init": "tsx scripts/init-db.ts",
     "db:reset": "tsx scripts/reset-db.ts",
-    "import-all": "node import-all-data.js"
+    "import-all": "node import-all-data.js",
+    "migrate:users": "tsx scripts/migrate-users.ts",
+    "dev:migrate": "tsx scripts/migrate-users.ts",
+    "debug-auth-users": "tsx scripts/debug-auth-users.ts"
   },
   "dependencies": {
     "@auth/pg-adapter": "^1.11.0",
@@ -22,9 +25,12 @@
     "@prisma/client": "^6.19.0",
     "@react-jvectormap/core": "^1.0.4",
     "@react-jvectormap/world": "^1.1.2",
+    "@reduxjs/toolkit": "^2.11.0",
+    "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",
     "@tailwindcss/forms": "^0.5.9",
     "@tailwindcss/postcss": "^4.0.9",
+    "@tanstack/react-query": "^5.90.10",
     "@types/bcrypt": "^6.0.0",
     "@types/pg": "^8.15.5",
     "@types/react-pdf": "^6.2.0",
@@ -54,6 +60,8 @@
     "react-dropzone": "^14.3.5",
     "react-pdf": "^10.2.0",
     "react-quilljs": "^2.0.5",
+    "react-redux": "^9.2.0",
+    "recharts": "^3.5.0",
     "swiper": "^11.2.0",
     "tailwind-merge": "^2.6.0",
     "xlsx": "^0.18.5"

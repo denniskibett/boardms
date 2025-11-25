@@ -1,8 +1,7 @@
 // lib/actions/settings.ts
 'use server';
 
-import pool from '@/lib/db';
-
+import
 export async function getSystemSettings() {
   try {
     // Fetch system settings

@@ -5,7 +5,7 @@ interface PageProps {
 }
 
 export default async function MeetingPage({ params }: PageProps) {
-  // ✅ FIX: Await params for Next.js 13+
+  // ✅ CORRECT: Await params for Next.js 14+
   const { id } = await params;
   return <SingleMeeting meetingId={id} />;
 }

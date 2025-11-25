@@ -18,25 +18,38 @@ export default function UserMetaCard() {
   const handleSave = async () => {
     // Handle save logic here - you can integrate with your API
     console.log("Saving changes...");
-    
-    // Example: Update session with new data
-    // await update({ 
-    //   ...session,
-    //   user: {
-    //     ...session.user,
-    //     name: "Updated Name", // You'd get this from form state
-    //   }
-    // });
-    
+ 
     closeModal();
   };
 
   // Get user image with fallback
   const getUserImage = () => {
-    if (user?.image) {
+    console.log('🖼️ MetaCard user image data:', {
+      userImage: user?.image,
+      userName: user?.name
+    });
+    
+    if (!user?.image) {
+      console.log('❌ No user image, using fallback');
+      return "/images/user/owner.jpg"; // Fallback image
+    }
+
+    // Handle external URLs (https://, http://)
+    if (user.image.startsWith('https') || user.image.startsWith('http')) {
+      console.log('🌐 Using external URL:', user.image);
       return user.image;
     }
-    return "/images/user/owner.jpg"; // Fallback image
+    
+    // Handle absolute local paths (starting with /)
+    if (user.image.startsWith('/')) {
+      console.log('📁 Using absolute local path:', user.image);
+      return user.image;
+    }
+    
+    // Handle relative paths - assume it's in the images/users folder
+    const localPath = `/images/users/${user.image}`;
+    console.log('📁 Using relative local path from DB:', localPath);
+    return localPath;
   };
 
   // Get user image alt text

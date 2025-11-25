@@ -1,3 +1,4 @@
+// src/app/api/meetings/[id]/route.ts - UPDATED FOR CONSISTENCY
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
@@ -195,6 +196,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // ✅ FIXED: Await params for Next.js 14+
     const { id } = await params;
     const meetingId = id;
     const meetingData = await request.json();
@@ -283,6 +285,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // ✅ FIXED: Await params for Next.js 14+
     const { id } = await params;
     const meetingId = id;
     

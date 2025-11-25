@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -17,7 +17,8 @@ import {
   RotateCcw,
   Search,
   Users,
-  Plus
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import MeetingDetails from './MeetingDetails';
 import MeetingInvitees from './MeetingInvitees';
@@ -130,6 +131,7 @@ const SingleMeeting: React.FC = () => {
   const meetingId = params.id as string;
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
+  const [participants, setParticipants] = useState<any[]>([]); // Separate participants state
   const [agenda, setAgenda] = useState<Agenda[]>([]);
   const [selectedAgenda, setSelectedAgenda] = useState<Agenda | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -155,7 +157,36 @@ const SingleMeeting: React.FC = () => {
   // Get all documents from all agenda items
   const allDocuments = agenda.flatMap(agendaItem => agendaItem.documents || []);
 
-  // Fetch meeting data with abort controller to prevent memory leaks
+  // Stable participants update handler
+  const handleParticipantsUpdate = useCallback((updatedParticipants: any[]) => {
+    console.log('🔄 Updating participants in parent:', updatedParticipants.length);
+    setParticipants(updatedParticipants);
+    
+    // Also update the meeting object to keep consistency
+    if (meeting) {
+      setMeeting(prev => prev ? {
+        ...prev,
+        participants: updatedParticipants
+      } : null);
+    }
+  }, [meeting]);
+
+  // Stable refresh function for participants
+  const refreshParticipants = useCallback(async () => {
+    try {
+      console.log('🔄 Manually refreshing participants...');
+      const response = await fetch(`/api/meetings/${meetingId}/participants`);
+      if (response.ok) {
+        const participantsData = await response.json();
+        setParticipants(participantsData);
+        console.log('✅ Participants refreshed:', participantsData.length);
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing participants:', error);
+    }
+  }, [meetingId]);
+
+  // Fetch meeting data with stable state management
   useEffect(() => {
     const abortController = new AbortController();
     
@@ -183,6 +214,11 @@ const SingleMeeting: React.FC = () => {
         console.log('✅ Meeting data loaded:', meetingData);
         
         setMeeting(meetingData);
+        
+        // Set participants from meeting data if available
+        if (meetingData.participants) {
+          setParticipants(meetingData.participants);
+        }
         
         // Set agenda from the meeting data
         if (meetingData.agenda) {
@@ -448,6 +484,11 @@ const SingleMeeting: React.FC = () => {
       if (meetingResponse.ok) {
         const meetingData = await meetingResponse.json();
         setMeeting(meetingData);
+        
+        // Update participants from meeting data
+        if (meetingData.participants) {
+          setParticipants(meetingData.participants);
+        }
         
         if (meetingData.agenda) {
           // Fetch documents for each agenda item with error handling
@@ -765,7 +806,6 @@ const SingleMeeting: React.FC = () => {
     const currentContent = documentContents[currentContentIndex];
 
     return (
-      
       <div className="fixed inset-0 z-50 flex bg-white dark:bg-gray-900">
         {/* Left Panel - Meeting & Agenda Info (30%) */}
         <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -817,8 +857,6 @@ const SingleMeeting: React.FC = () => {
               </button>
             </div>
           </div>
-
-          
 
           {/* Agenda List */}
           <div className="flex-1 overflow-y-auto">
@@ -1133,8 +1171,6 @@ const SingleMeeting: React.FC = () => {
         </nav>
       </div>
 
-      
-
       {/* Meeting Details */}
       <MeetingDetails meeting={meeting} onEdit={handleEdit} />
 
@@ -1194,22 +1230,10 @@ const SingleMeeting: React.FC = () => {
         })}
       </div>
 
-       <div className="h-screen"> 
-          {/* Ensure full height */}
-            <OpenBook meetingId={meetingId} />
-          </div>
-
-      {/* Meeting Agenda */}
-      {/* <MeetingAgenda
-        meetingId={meetingId}
-        agenda={agenda}
-        selectedAgenda={selectedAgenda}
-        onAgendaSelect={setSelectedAgenda}
-        onAgendaUpdate={handleAgendaUpdate}
-        onAgendaAdded={refreshMeetingData}
-        onDocumentView={openDocumentViewer}
-        onDocumentDownload={handleDownloadDocument}
-      /> */}
+      <div className="h-screen"> 
+        {/* Ensure full height */}
+        <OpenBook meetingId={meetingId} />
+      </div>
 
       {/* Participants Slide-over */}
       {isParticipantsSlideOverOpen && (
@@ -1248,14 +1272,9 @@ const SingleMeeting: React.FC = () => {
                     <div className="p-6">
                       <MeetingParticipants 
                         meetingId={parseInt(meetingId)} 
-                        onParticipantsUpdate={(updatedParticipants) => {
-                          if (meeting) {
-                            setMeeting({
-                              ...meeting,
-                              participants: updatedParticipants
-                            });
-                          }
-                        }}
+                        participants={participants}
+                        onParticipantsUpdate={handleParticipantsUpdate}
+                        onRefresh={refreshParticipants}
                       />
                     </div>
                   </div>
@@ -1278,6 +1297,8 @@ const SingleMeeting: React.FC = () => {
 
       {/* Document Viewer */}
       {renderDocumentViewer()}
+
+    
 
       {/* Add CSS for document styling */}
       <style jsx global>{`

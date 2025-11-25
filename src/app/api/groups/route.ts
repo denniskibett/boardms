@@ -1,84 +1,156 @@
-import { NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+// src/app/api/groups/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase';
 
-/* -------------------------------------------------------------
-   GET /api/groups  → returns groups with users & mandatory status
----------------------------------------------------------------- */
-export async function GET() {
+// GET - Fetch all groups with their members
+export async function GET(request: NextRequest) {
   try {
-    const groups = await query(`
-      SELECT g.id, g.name, g.created_at, g.updated_at,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'user_id', pu.user_id,
-              'mandatory_id', pu.mandatory_id,
-              'mandatory_status', c.name
-            )
-          ) FILTER (WHERE pu.user_id IS NOT NULL),
-        '[]') AS users
-      FROM groups g
-      LEFT JOIN groups_users_pivot pu ON g.id = pu.group_id
-      LEFT JOIN categories c ON c.id = pu.mandatory_id AND c.type = 'participation_status'
-      GROUP BY g.id
-      ORDER BY g.name;
-    `);
+    const supabase = supabaseServer();
+    
+    console.log('🔄 Fetching groups with members (both UUIDs)...');
 
-    return NextResponse.json(groups.rows);
+    // First, fetch all groups
+    const { data: groups, error: groupsError } = await supabase
+      .from('groups')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (groupsError) {
+      console.error('❌ Error fetching groups:', groupsError);
+      throw groupsError;
+    }
+
+    if (!groups || groups.length === 0) {
+      console.log('✅ No groups found');
+      return NextResponse.json([]);
+    }
+
+    console.log(`✅ Found ${groups.length} groups`);
+
+    // Fetch all group_users in a single query
+    const { data: allGroupUsers, error: groupUsersError } = await supabase
+      .from('group_users')
+      .select('*')
+      .in('group_id', groups.map(g => g.id));
+
+    if (groupUsersError) {
+      console.error('❌ Error fetching group users:', groupUsersError);
+      throw groupUsersError;
+    }
+
+    console.log(`✅ Found ${allGroupUsers?.length || 0} group user relationships`);
+
+    // Get all unique user UUIDs from group_users
+    const userUuids = allGroupUsers ? [...new Set(allGroupUsers.map(gu => gu.user_id))] : [];
+
+    // Fetch all users by their UUIDs (auth_ids)
+    let allUsers: any[] = [];
+    if (userUuids.length > 0) {
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('id, auth_id, name, email, role, image')
+        .in('auth_id', userUuids); // Query by auth_id (UUID) instead of id (integer)
+
+      if (usersError) {
+        console.error('❌ Error fetching users by UUID:', usersError);
+      } else {
+        allUsers = usersData || [];
+        console.log(`✅ Found ${allUsers.length} users for groups`);
+      }
+    }
+
+    // Build the final response by combining groups with their members
+    const groupsWithMembers = groups.map(group => {
+      const groupUserRelations = allGroupUsers?.filter(gu => gu.group_id === group.id) || [];
+      
+      const groupUsers = groupUserRelations
+        .map(gu => {
+          const user = allUsers.find(u => u.auth_id === gu.user_id);
+          return user ? {
+            id: user.id, // Use the database ID, not auth_id
+            auth_id: user.auth_id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            image: user.image
+          } : null;
+        })
+        .filter(user => user != null);
+
+      return {
+        id: group.id.toString(),
+        name: group.name,
+        users: groupUsers
+      };
+    });
+
+    console.log(`✅ Built ${groupsWithMembers.length} groups with members`);
+    
+    return NextResponse.json(groupsWithMembers);
+    
   } catch (error) {
-    console.error('Error fetching groups:', error);
-    return NextResponse.json({ error: 'Failed to fetch groups' }, { status: 500 });
+    console.error('❌ Error fetching groups:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch groups' },
+      { status: 500 }
+    );
   }
 }
 
-/* -------------------------------------------------------------
-   POST /api/groups  → create new group (+ add users)
-   BODY:
-   {
-     "name": "Finance Committee",
-     "users": [
-       { "user_id": 1, "mandatory_id": 5 },
-       { "user_id": 3, "mandatory_id": 6 }
-     ]
-   }
----------------------------------------------------------------- */
-export async function POST(req: Request) {
+// POST - Create a new group
+export async function POST(request: NextRequest) {
   try {
-    const { name, users } = await req.json();
-
-    // 1. Create group
-    const result = await query(
-      `INSERT INTO groups (name) VALUES ($1) RETURNING id`,
-      [name]
-    );
-    const groupId = result.rows[0].id;
-
-    // 2. Insert into pivot table
-    if (Array.isArray(users) && users.length > 0) {
-      const values = users
-        .map(
-          (u, index) =>
-            `($1, $${index * 2 + 2}, $${index * 2 + 3})`
-        )
-        .join(',');
-
-      const params = [
-        groupId,
-        ...users.flatMap((u) => [u.user_id, u.mandatory_id]),
-      ];
-
-      await query(
-        `
-        INSERT INTO groups_users_pivot (group_id, user_id, mandatory_id)
-        VALUES ${values}
-      `,
-        params
+    const { name, user_ids } = await request.json();
+    const supabase = supabaseServer();
+    
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Group name is required' },
+        { status: 400 }
       );
     }
 
-    return NextResponse.json({ message: 'Group created', groupId });
+    // Create the group
+    const { data: newGroup, error: groupError } = await supabase
+      .from('groups')
+      .insert({
+        name: name.trim()
+      })
+      .select()
+      .single();
+
+    if (groupError) {
+      console.error('❌ Error creating group:', groupError);
+      throw groupError;
+    }
+
+    // Add users to the group if provided
+    if (user_ids && user_ids.length > 0) {
+      const groupUsers = user_ids.map((userId: string) => ({
+        group_id: newGroup.id,
+        user_id: parseInt(userId)
+      }));
+
+      const { error: usersError } = await supabase
+        .from('group_users')
+        .insert(groupUsers);
+
+      if (usersError) {
+        console.error('❌ Error adding users to group:', usersError);
+        // Continue anyway - the group was created successfully
+      }
+    }
+
+    console.log(`✅ Created new group: ${newGroup.name}`);
+    
+    return NextResponse.json({
+      id: newGroup.id.toString(),
+      name: newGroup.name,
+      users: []
+    });
+    
   } catch (error) {
-    console.error('Error creating group:', error);
+    console.error('❌ Error creating group:', error);
     return NextResponse.json(
       { error: 'Failed to create group' },
       { status: 500 }

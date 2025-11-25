@@ -1,6 +1,6 @@
-// app/api/meetings/route.ts - UPDATED
+// app/api/meetings/route.ts - UPDATED for your supabaseDb wrapper
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { supabaseServer } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,70 +8,65 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get('date');
     const type = searchParams.get('type');
 
-    const whereConditions: string[] = [];
-    const params: any[] = [];
-    let paramCount = 0;
+    console.log('🔍 Fetching meetings with filters:', { date, type });
 
+    // Use the actual Supabase client directly
+    const supabase = supabaseServer();
+    
+    let query = supabase
+      .from('meetings')
+      .select(`
+        *,
+        chair:chair_id (id, name, email, role),
+        created_by_user:created_by (id, name),
+        approved_by_user:approved_by (id, name),
+        meeting_participants (user_id)
+      `)
+      .order('start_at', { ascending: false });
+
+    // Apply filters
     if (date) {
-      paramCount++;
-      whereConditions.push(`DATE(m.start_at) = $${paramCount}`);
-      params.push(date);
+      query = query.eq('start_at', date); // You might need to adjust this for date range
     }
 
     if (type) {
-      paramCount++;
-      whereConditions.push(`m.type = $${paramCount}`);
-      params.push(type);
+      query = query.eq('type', type);
     }
 
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(' AND ')}`
-        : '';
+    const { data: meetings, error } = await query;
 
-    console.log('Fetching meetings with query...', whereClause, params);
+    if (error) {
+      console.error('❌ Supabase error fetching meetings:', error);
+      return NextResponse.json([], { status: 500 });
+    }
 
-    const meetings = await query(
-      `
-      SELECT 
-        m.id,
-        m.name,
-        m.type,
-        m.start_at,
-        m.period,
-        m.actual_end,
-        m.location,
-        m.chair_id,
-        m.status,
-        m.created_at,
-        m.updated_at,
-        m.approved_by,
-        m.created_by,
-        m.description,
-        m.colour,
-        chair.name AS chair_name,
-        chair.email AS chair_email,
-        created_by_user.name AS created_by_name,
-        approved_by_user.name AS approved_by_name,
-        COUNT(mp.user_id) AS attendees_count
-      FROM meetings m
-      LEFT JOIN users chair ON m.chair_id = chair.id
-      LEFT JOIN users created_by_user ON m.created_by = created_by_user.id
-      LEFT JOIN users approved_by_user ON m.approved_by = approved_by_user.id
-      LEFT JOIN meeting_participants mp ON m.id = mp.meeting_id
-      ${whereClause}
-      GROUP BY 
-        m.id, m.name, m.type, m.start_at, m.location, m.chair_id, m.status,
-        m.created_at, m.updated_at, m.approved_by, m.created_by, m.description,
-        m.period, m.actual_end, m.colour,
-        chair.name, chair.email, created_by_user.name, approved_by_user.name
-      ORDER BY m.start_at DESC
-      `,
-      params
-    );
+    // Transform the data to match your expected format
+    const transformedMeetings = (meetings || []).map(meeting => ({
+      id: meeting.id,
+      name: meeting.name,
+      type: meeting.type,
+      start_at: meeting.start_at,
+      period: meeting.period,
+      actual_end: meeting.actual_end,
+      location: meeting.location,
+      chair_id: meeting.chair_id,
+      status: meeting.status,
+      created_at: meeting.created_at,
+      updated_at: meeting.updated_at,
+      approved_by: meeting.approved_by,
+      created_by: meeting.created_by,
+      description: meeting.description,
+      colour: meeting.colour,
+      chair_name: meeting.chair?.name,
+      chair_email: meeting.chair?.email,
+      created_by_name: meeting.created_by_user?.name,
+      approved_by_name: meeting.approved_by_user?.name,
+      attendees_count: meeting.meeting_participants?.length || 0
+    }));
 
-    console.log(`✅ Found ${meetings.rows.length} meetings`);
-    return NextResponse.json(meetings.rows || []);
+    console.log(`✅ Found ${transformedMeetings.length} meetings`);
+    return NextResponse.json(transformedMeetings);
+
   } catch (error) {
     console.error('❌ Error fetching meetings:', error);
     return NextResponse.json([], { status: 500 });
@@ -84,7 +79,7 @@ export async function POST(request: NextRequest) {
     
     console.log('📝 Creating new meeting - Received data:', meetingData);
 
-    // Validate required fields for meeting creation
+    // Validate required fields
     if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
       return NextResponse.json(
         { 
@@ -96,7 +91,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare meeting data
+    // Calculate actual_end if not provided
+    let actual_end = meetingData.actual_end;
+    if (!actual_end && meetingData.period) {
+      const startDate = new Date(meetingData.start_at);
+      const endDate = new Date(startDate.getTime() + (meetingData.period * 60 * 1000));
+      actual_end = endDate.toISOString();
+    }
+
+    // Prepare insert data
     const insertData = {
       name: meetingData.name,
       type: meetingData.type,
@@ -107,77 +110,47 @@ export async function POST(request: NextRequest) {
       status: meetingData.status,
       description: meetingData.description || '',
       colour: meetingData.colour || '#3b82f6',
-      actual_end: meetingData.actual_end || null,
+      actual_end: actual_end,
       created_by: meetingData.created_by || 1,
-      approved_by: meetingData.approved_by || null
+      approved_by: meetingData.approved_by || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
     console.log('🔄 Inserting meeting with data:', insertData);
 
-    // Calculate actual_end if not provided
-    let actual_end = insertData.actual_end;
-    if (!actual_end && insertData.period) {
-      // Calculate end time by adding period minutes to start time
-      const startDate = new Date(insertData.start_at);
-      const endDate = new Date(startDate.getTime() + (insertData.period * 60 * 1000));
-      actual_end = endDate.toISOString();
+    // Use the actual Supabase client directly
+    const supabase = supabaseServer();
+    
+    const { data: newMeeting, error } = await supabase
+      .from('meetings')
+      .insert([insertData])
+      .select(`
+        *,
+        chair:chair_id (id, name, email, role),
+        created_by_user:created_by (id, name),
+        approved_by_user:approved_by (id, name)
+      `)
+      .single();
+
+    if (error) {
+      console.error('❌ Supabase error creating meeting:', error);
+      throw new Error(`Database error: ${error.message}`);
     }
 
-    // Insert meeting
-    const result = await query(
-      `
-      INSERT INTO meetings (
-        name, 
-        type, 
-        start_at, 
-        period, 
-        location, 
-        chair_id, 
-        status, 
-        description, 
-        colour, 
-        actual_end,
-        created_by,
-        approved_by,
-        created_at,
-        updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
-      RETURNING *
-      `,
-      [
-        insertData.name,
-        insertData.type,
-        insertData.start_at,
-        insertData.period,
-        insertData.location,
-        insertData.chair_id,
-        insertData.status,
-        insertData.description,
-        insertData.colour,
-        actual_end,
-        insertData.created_by,
-        insertData.approved_by
-      ]
-    );
-
-    if (result.rows.length === 0) {
-      console.error('❌ No rows returned from INSERT');
+    if (!newMeeting) {
       throw new Error('Failed to create meeting - no data returned');
     }
 
-    const newMeeting = result.rows[0];
-    console.log('✅ Meeting created successfully:', newMeeting);
-
+    console.log('✅ Meeting created successfully:', newMeeting.id);
     return NextResponse.json(newMeeting);
 
   } catch (error: any) {
     console.error('❌ Error creating meeting:', error);
     
-    // Provide detailed error information
     const errorResponse = {
       error: 'Failed to create meeting',
       details: error.message,
-      code: error.code,
       timestamp: new Date().toISOString()
     };
     
@@ -209,19 +182,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Check if meeting exists
-    const existingMeeting = await query(
-      'SELECT id FROM meetings WHERE id = $1',
-      [id]
-    );
-
-    if (existingMeeting.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Meeting not found' },
-        { status: 404 }
-      );
-    }
-
     // Calculate actual_end if period is provided
     let actual_end = meetingData.actual_end;
     if (!actual_end && meetingData.period) {
@@ -230,56 +190,58 @@ export async function PUT(request: NextRequest) {
       actual_end = endDate.toISOString();
     }
 
-    // Update the meeting
-    const result = await query(
-      `
-      UPDATE meetings SET
-        name = $1,
-        type = $2,
-        start_at = $3,
-        period = $4,
-        actual_end = $5,
-        location = $6,
-        chair_id = $7,
-        status = $8,
-        description = $9,
-        colour = $10,
-        approved_by = $11,
-        updated_at = NOW()
-      WHERE id = $12
-      RETURNING *
-      `,
-      [
-        meetingData.name,
-        meetingData.type,
-        meetingData.start_at,
-        meetingData.period || 60,
-        actual_end,
-        meetingData.location,
-        meetingData.chair_id || null,
-        meetingData.status,
-        meetingData.description || '',
-        meetingData.colour || '#3b82f6',
-        meetingData.approved_by || null,
-        id
-      ]
-    );
+    // Prepare update data
+    const updateData = {
+      name: meetingData.name,
+      type: meetingData.type,
+      start_at: meetingData.start_at,
+      period: meetingData.period || 60,
+      actual_end: actual_end,
+      location: meetingData.location,
+      chair_id: meetingData.chair_id || null,
+      status: meetingData.status,
+      description: meetingData.description || '',
+      colour: meetingData.colour || '#3b82f6',
+      approved_by: meetingData.approved_by || null,
+      updated_at: new Date().toISOString()
+    };
 
-    if (result.rows.length === 0) {
-      throw new Error('Failed to update meeting');
+    // Use the actual Supabase client directly
+    const supabase = supabaseServer();
+    
+    const { data: updatedMeeting, error } = await supabase
+      .from('meetings')
+      .update(updateData)
+      .eq('id', id)
+      .select(`
+        *,
+        chair:chair_id (id, name, email, role),
+        created_by_user:created_by (id, name),
+        approved_by_user:approved_by (id, name)
+      `)
+      .single();
+
+    if (error) {
+      console.error('❌ Supabase error updating meeting:', error);
+      throw new Error(`Database error: ${error.message}`);
     }
 
-    const updatedMeeting = result.rows[0];
-    console.log('✅ Meeting updated successfully:', updatedMeeting.id);
+    if (!updatedMeeting) {
+      return NextResponse.json(
+        { error: 'Meeting not found' },
+        { status: 404 }
+      );
+    }
 
+    console.log('✅ Meeting updated successfully:', updatedMeeting.id);
     return NextResponse.json(updatedMeeting);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error updating meeting:', error);
     return NextResponse.json(
       { 
         error: 'Failed to update meeting',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: error.message
       }, 
       { status: 500 }
     );

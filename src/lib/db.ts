@@ -2,6 +2,7 @@
 import { supabaseServer } from './supabase/server'
 import { supabaseDb } from './supabase-db'
 
+
 // Test database connection
 export const testConnection = async () => {
   try {

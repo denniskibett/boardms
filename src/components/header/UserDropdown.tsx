@@ -29,15 +29,43 @@ export default function UserDropdown() {
     try {
       await signOut({ 
         redirect: false,
-        callbackUrl: "/signin"
+        callbackUrl: "/auth/signin"
       });
       closeDropdown();
       // Redirect to signin page after sign out
-      router.push("/signin");
+      router.push("/auth/signin");
       router.refresh(); // Refresh to clear any cached session data
     } catch (error) {
       console.error("Sign out error:", error);
     }
+  };
+
+  // Function to get user image with proper handling
+  const getUserImage = (user: any) => {
+    console.log('🖼️ UserDropdown image source:', user?.image);
+    
+    if (!user?.image) {
+      return "/images/user/owner.jpg"; // Default fallback image
+    }
+
+    // Handle external URLs
+    if (user.image.startsWith('https') || user.image.startsWith('http')) {
+      return user.image;
+    }
+    
+    // Handle absolute local paths
+    if (user.image.startsWith('/')) {
+      return user.image;
+    }
+    
+    // Handle relative paths - assume it's in the images/users folder
+    return `/images/users/${user.image}`;
+  };
+
+  // Function to get user initials for fallback
+  const getUserInitials = (user: any) => {
+    const name = user?.name || user?.email || 'User';
+    return name.split(' ').map((n: string) => n[0]).join('').toUpperCase().substring(0, 2);
   };
 
   // Don't render anything if no session and still loading
@@ -58,6 +86,7 @@ export default function UserDropdown() {
   }
 
   const user = session.user;
+  const userImage = getUserImage(user);
 
   return (
     <div className="relative"> 
@@ -72,9 +101,16 @@ export default function UserDropdown() {
           <Image
             width={44}
             height={44}
-            src="/images/user/owner.jpg"
+            src={userImage}
             alt={`${user.name || 'User'} profile picture`}
             className="object-cover"
+            onError={(e) => {
+              console.error('❌ UserDropdown image failed to load:', userImage);
+              // Fallback to initials in case of error
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              // You could add logic here to show initials instead
+            }}
           />
         </span>
 

@@ -1,34 +1,28 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useUser } from "@/hooks/useUser";
 import Image from "next/image";
+import Link from "next/link";
 
-interface User {
+interface AuthUser {
   id: string;
-  name: string;
   email: string;
-  image?: string;
-  password?: string;
-  role: string;
+  email_confirmed: boolean;
+  last_sign_in: string | null;
+  created_at: string;
+  user_metadata: any;
+  custom_user_linked: boolean;
+  custom_user_id?: string;
+  auth_id_in_custom?: string;
   status: string;
+  role: string;
+  name?: string;
+  image?: string;
   phone?: string;
-  last_login?: string;
-  ministry_id?: number;
   ministry_name?: string;
-  cluster_id?: number;
-  committees?: string[];
-  created_at?: string;
-  updated_at?: string;
 }
 
-interface Ministry {
-  id: number;
-  name: string;
-  acronym: string;
-  cluster_id?: number;
-}
-
-// Define specific types for roles and statuses
+// Define specific types for roles and statuses with proper hierarchy
 type UserRole = 
   | "President"
   | "Deputy President"
@@ -43,6 +37,21 @@ type UserRole =
   | "Secretary to the Cabinet";
 
 type UserStatus = "active" | "inactive" | "pending" | "suspended";
+
+// Role hierarchy for sorting
+const roleHierarchy: Record<UserRole, number> = {
+  "President": 1,
+  "Deputy President": 2,
+  "Prime Cabinet Secretary": 3,
+  "Cabinet Secretary": 4,
+  "Principal Secretary": 5,
+  "Cabinet Secretariat": 6,
+  "Director": 7,
+  "Assistant Director": 8,
+  "Admin": 9,
+  "Attorney General": 10,
+  "Secretary to the Cabinet": 11
+};
 
 // Use Record type for better TypeScript support
 const roleColors: Record<UserRole | "Admin", string> = {
@@ -66,6 +75,12 @@ const statusColors: Record<UserStatus, string> = {
   suspended: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
 };
 
+const syncStatusColors = {
+  synced: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
+  not_synced: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+  mismatched: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+};
+
 const roles: UserRole[] = [
   "President",
   "Deputy President",
@@ -83,85 +98,84 @@ const roles: UserRole[] = [
 const statusOptions: UserStatus[] = ["active", "inactive", "pending", "suspended"];
 
 export default function UsersList() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [ministries, setMinistries] = useState<Ministry[]>([]);
+  const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
   const [filter, setFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<AuthUser | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [userToDelete, setUserToDelete] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const { data: session } = useSession();
+  const { user: currentUser, loading: userLoading } = useUser();
 
   // Form state
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    image: "",
     role: "Cabinet Secretary" as UserRole,
     status: "active" as UserStatus,
     phone: "",
-    ministry_id: "",
     password: "",
+    image: "",
   });
 
   useEffect(() => {
-    fetchUsers();
-    fetchMinistries();
+    fetchAuthUsers();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchAuthUsers = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('/api/users');
+      const response = await fetch('/api/auth/users');
       if (!response.ok) {
-        throw new Error('Failed to fetch users');
+        throw new Error('Failed to fetch authentication users');
       }
       const data = await response.json();
-      setUsers(data);
+      
+      // Sort users by role hierarchy first, then by ID ascending
+      const sortedUsers = (data.users || []).sort((a: AuthUser, b: AuthUser) => {
+        const roleA = roleHierarchy[a.role as UserRole] || 999;
+        const roleB = roleHierarchy[b.role as UserRole] || 999;
+        
+        if (roleA !== roleB) {
+          return roleA - roleB;
+        }
+        
+        // If same role, sort by ID ascending
+        return a.id.localeCompare(b.id);
+      });
+      
+      setAuthUsers(sortedUsers);
     } catch (error) {
-      console.error('Error fetching users:', error);
-      setError('Failed to load users. Please try again.');
+      console.error('Error fetching auth users:', error);
+      setError('Failed to load authentication users. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchMinistries = async () => {
-    try {
-      const response = await fetch('/api/ministries');
-      if (response.ok) {
-        const data = await response.json();
-        setMinistries(data);
-      }
-    } catch (error) {
-      console.error('Error fetching ministries:', error);
-    }
-  };
-
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = authUsers.filter(user => {
     const matchesFilter = filter === "all" || user.role === filter;
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (user.ministry_name && user.ministry_name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSearch = 
+      (user.user_metadata?.name || user.email).toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.role && user.role.toLowerCase().includes(searchTerm.toLowerCase()));
     return matchesFilter && matchesSearch;
   });
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: AuthUser) => {
     setEditingUser(user);
     setFormData({
-      name: user.name,
+      name: user.user_metadata?.name || "",
       email: user.email,
-      image: user.image || "",
-      role: user.role as UserRole,
-      status: user.status as UserStatus,
+      role: (user.role as UserRole) || "Cabinet Secretary",
+      status: (user.status as UserStatus) || "active",
       phone: user.phone || "",
-      ministry_id: user.ministry_id?.toString() || "",
       password: "", // Don't pre-fill password for security
+      image: user.user_metadata?.image || user.image || "",
     });
     setIsModalOpen(true);
     setError(null);
@@ -173,12 +187,11 @@ export default function UsersList() {
     setFormData({
       name: "",
       email: "",
-      image: "",
       role: "Cabinet Secretary",
       status: "active",
       phone: "",
-      ministry_id: "",
       password: "",
+      image: "",
     });
     setIsModalOpen(true);
     setError(null);
@@ -191,8 +204,8 @@ export default function UsersList() {
     setSuccess(null);
     
     try {
-      const url = editingUser ? `/api/users/${editingUser.id}` : '/api/users';
-      const method = editingUser ? 'PUT' : 'POST';
+      const url = '/api/admin/users';
+      const method = 'POST';
       
       const response = await fetch(url, {
         method,
@@ -205,14 +218,14 @@ export default function UsersList() {
       const result = await response.json();
 
       if (response.ok) {
-        setSuccess(editingUser ? 'User updated successfully!' : 'User created successfully!');
-        await fetchUsers(); // Refresh the list
+        setSuccess('User created successfully!');
+        await fetchAuthUsers();
         setTimeout(() => {
           setIsModalOpen(false);
           resetForm();
         }, 1000);
       } else {
-        setError(result.error || `Error ${editingUser ? 'updating' : 'creating'} user`);
+        setError(result.error || 'Error creating user');
       }
     } catch (error) {
       console.error('Error saving user:', error);
@@ -227,15 +240,19 @@ export default function UsersList() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`/api/users/${userToDelete.id}`, {
+      const response = await fetch(`/api/admin/users`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: userToDelete.id }),
       });
 
       const result = await response.json();
 
       if (response.ok) {
         setSuccess('User deleted successfully!');
-        await fetchUsers(); // Refresh the list
+        await fetchAuthUsers();
         setTimeout(() => {
           setIsDeleteModalOpen(false);
           setUserToDelete(null);
@@ -249,16 +266,62 @@ export default function UsersList() {
     }
   };
 
+  const syncUser = async (authUserId: string, email: string) => {
+    try {
+      setError(null);
+      const response = await fetch('/api/admin/users/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ authUserId, email }),
+      });
+
+      if (response.ok) {
+        setSuccess('User synced successfully!');
+        await fetchAuthUsers();
+      } else {
+        const error = await response.json();
+        setError(`Sync failed: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error syncing user:', error);
+      setError('Sync failed');
+    }
+  };
+
+  const resendConfirmation = async (email: string) => {
+    try {
+      setError(null);
+      const response = await fetch('/api/auth/resend-confirmation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (response.ok) {
+        setSuccess('Confirmation email sent!');
+      } else {
+        const error = await response.json();
+        setError(`Failed to send confirmation: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error resending confirmation:', error);
+      setError('Failed to send confirmation email');
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       name: "",
       email: "",
-      image: "",
       role: "Cabinet Secretary",
       status: "active",
       phone: "",
-      ministry_id: "",
       password: "",
+      image: "",
     });
     setEditingUser(null);
     setError(null);
@@ -273,16 +336,11 @@ export default function UsersList() {
     }));
   };
 
-  const openDeleteModal = (user: User) => {
+  const openDeleteModal = (user: AuthUser) => {
     setUserToDelete(user);
     setIsDeleteModalOpen(true);
     setError(null);
     setSuccess(null);
-  };
-
-  const getMinistryName = (ministryId: number) => {
-    const ministry = ministries.find(m => m.id === ministryId);
-    return ministry ? `${ministry.name} (${ministry.acronym})` : 'Not assigned';
   };
 
   // Safe role color getter with fallback
@@ -295,6 +353,18 @@ export default function UsersList() {
     return statusColors[status as UserStatus] || statusColors.inactive;
   };
 
+  const getSyncStatusColor = (user: AuthUser): string => {
+    if (!user.custom_user_linked) return syncStatusColors.not_synced;
+    if (user.auth_id_in_custom && !user.custom_user_linked) return syncStatusColors.mismatched;
+    return syncStatusColors.synced;
+  };
+
+  const getSyncStatusText = (user: AuthUser): string => {
+    if (!user.custom_user_linked) return "Not Synced";
+    if (user.auth_id_in_custom && !user.custom_user_linked) return "Mismatched";
+    return "Synced";
+  };
+
   // Clear messages after 5 seconds
   useEffect(() => {
     if (error || success) {
@@ -305,6 +375,15 @@ export default function UsersList() {
       return () => clearTimeout(timer);
     }
   }, [error, success]);
+
+  // Calculate statistics
+  const stats = {
+    total: authUsers.length,
+    confirmed: authUsers.filter(u => u.email_confirmed).length,
+    unconfirmed: authUsers.filter(u => !u.email_confirmed).length,
+    synced: authUsers.filter(u => u.custom_user_linked).length,
+    notSynced: authUsers.filter(u => !u.custom_user_linked).length,
+  };
 
   if (loading) {
     return (
@@ -322,164 +401,306 @@ export default function UsersList() {
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-      {/* Header with Filters */}
-      <div className="border-b border-gray-200 p-6 dark:border-gray-800">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search cabinet members..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pl-10 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 sm:w-80"
-              />
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                </svg>
-              </div>
+    <div className="space-y-5 sm:space-y-6">
+      {/* Statistics Cards - TailAdmin Styling */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-2xl font-bold text-gray-800 dark:text-white/90">{stats.total}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total Users</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-500/15">
+              <svg className="h-6 w-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+              </svg>
             </div>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-            >
-              <option value="all">All Roles</option>
-              {roles.map(role => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-            
-            <button
-              onClick={handleCreate}
-              className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 transition-colors duration-200"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-2xl font-bold text-gray-800 dark:text-white/90">{stats.confirmed}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Confirmed</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-50 dark:bg-green-500/15">
+              <svg className="h-6 w-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Add User
-            </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-2xl font-bold text-gray-800 dark:text-white/90">{stats.unconfirmed}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Unconfirmed</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-50 dark:bg-yellow-500/15">
+              <svg className="h-6 w-6 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-2xl font-bold text-gray-800 dark:text-white/90">{stats.synced}</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Synced</p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-50 dark:bg-purple-500/15">
+              <svg className="h-6 w-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Error and Success Messages */}
-      {error && (
-        <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800">
-          <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-medium">{error}</span>
+      {/* Main Table Container */}
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+        {/* Header with Search and Filters */}
+        <div className="border-b border-gray-100 px-5 py-4 sm:px-6 sm:py-5 dark:border-gray-800">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-medium text-gray-800 dark:text-white/90">
+                Cabinet Members
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Manage authentication users and their system access
+              </p>
+            </div>
+            
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {/* Search moved to right */}
+              <div className="relative sm:w-64">
+                <input
+                  type="text"
+                  placeholder="Search cabinet members..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pl-10 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
+                />
+                <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                  <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              
+              {/* Filter and Create buttons */}
+              <div className="flex items-center gap-3">
+                <select
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
+                >
+                  <option value="all">All Roles</option>
+                  {roles.map(role => (
+                    <option key={role} value={role}>{role}</option>
+                  ))}
+                </select>
+                
+                <button
+                  onClick={handleCreate}
+                  className="flex items-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 transition-colors duration-200"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add User
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {success && (
-        <div className="mx-6 mt-4 p-4 bg-green-50 border border-green-200 rounded-lg dark:bg-green-900/20 dark:border-green-800">
-          <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-sm font-medium">{success}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Users Table */}
-      <div className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-700">
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 dark:text-gray-300">Cabinet Member</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 dark:text-gray-300">Role</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 dark:text-gray-300">Ministry</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 dark:text-gray-300">Status</th>
-                <th className="px-6 py-4 text-left text-sm font-medium text-gray-500 dark:text-gray-300">Last Login</th>
-                <th className="px-6 py-4 text-right text-sm font-medium text-gray-500 dark:text-gray-300">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0">
-                        <UserAvatar user={user} />
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {user.name}
-                        </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                          {user.email}
-                        </div>
-                        {user.phone && (
-                          <div className="text-xs text-gray-400 dark:text-gray-500">
-                            {user.phone}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getRoleColor(user.role)}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                    {user.ministry_id ? getMinistryName(user.ministry_id) : 'Not assigned'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusColor(user.status)}`}>
-                      {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                    {user.last_login 
-                      ? `${new Date(user.last_login).toLocaleDateString()} at ${new Date(user.last_login).toLocaleTimeString()}`
-                      : 'Never'
-                    }
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => handleEdit(user)}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors duration-200"
-                      >
-                        Edit
-                      </button>
-                      <button 
-                        onClick={() => openDeleteModal(user)}
-                        className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 transition-colors duration-200"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredUsers.length === 0 && (
-          <div className="py-12 text-center">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No cabinet members found</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {searchTerm ? "Try adjusting your search terms" : "No cabinet members available"}
-            </p>
+        {/* Error and Success Messages */}
+        {error && (
+          <div className="mx-5 mt-4 p-4 bg-red-50 border border-red-200 rounded-lg dark:bg-red-900/20 dark:border-red-800 sm:mx-6">
+            <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-medium">{error}</span>
+            </div>
           </div>
         )}
+
+        {success && (
+          <div className="mx-5 mt-4 p-4 bg-green-50 border border-green-200 rounded-lg dark:bg-green-900/20 dark:border-green-800 sm:mx-6">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-medium">{success}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Table Section */}
+        <div className="p-5 sm:p-6">
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
+            <div className="max-w-full overflow-x-auto custom-scrollbar">
+              <table className="w-full min-w-[1102px]">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-800">
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Cabinet Member
+                      </p>
+                    </th>
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Role
+                      </p>
+                    </th>
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Status
+                      </p>
+                    </th>
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Sync Status
+                      </p>
+                    </th>
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Last Activity
+                      </p>
+                    </th>
+                    <th className="px-5 py-3 text-left sm:px-6">
+                      <p className="font-medium text-gray-500 text-theme-xs dark:text-gray-400">
+                        Actions
+                      </p>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id} className="border-b border-gray-100 dark:border-gray-800">
+                      <td className="px-5 py-4 sm:px-6">
+                        <div className="flex items-center gap-3">
+                          <UserAvatar user={user} />
+                          <div>
+<div>
+  <Link 
+    href={`/users/${user.id}`}
+    className="block font-medium text-gray-800 text-theme-sm dark:text-white/90 hover:text-brand-600 dark:hover:text-brand-400"
+  >
+    {user.user_metadata?.name || user.email}
+  </Link>
+  <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
+    {user.email}
+  </span>
+  {user.phone && (
+    <span className="block text-gray-400 text-theme-xs dark:text-gray-500">
+      {user.phone}
+    </span>
+  )}
+</div>
+                            <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
+                              {user.email}
+                            </span>
+                            {user.phone && (
+                              <span className="block text-gray-400 text-theme-xs dark:text-gray-500">
+                                {user.phone}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 sm:px-6">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-theme-xs font-medium ${getRoleColor(user.role)}`}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 sm:px-6">
+                        <div className="space-y-1">
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-theme-xs font-medium ${getStatusColor(user.status)}`}>
+                            {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
+                          </span>
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-theme-xs font-medium ${
+                            user.email_confirmed 
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                              : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+                          }`}>
+                            {user.email_confirmed ? 'Confirmed' : 'Unconfirmed'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 sm:px-6">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-theme-xs font-medium ${getSyncStatusColor(user)}`}>
+                          {getSyncStatusText(user)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 sm:px-6">
+                        <p className="text-gray-500 text-theme-sm dark:text-gray-400">
+                          {user.last_sign_in 
+                            ? new Date(user.last_sign_in).toLocaleDateString()
+                            : 'Never signed in'
+                          }
+                        </p>
+                        <p className="text-gray-400 text-theme-xs dark:text-gray-500">
+                          Created: {new Date(user.created_at).toLocaleDateString()}
+                        </p>
+                      </td>
+                      <td className="px-5 py-4 sm:px-6">
+                        <div className="flex flex-wrap gap-1">
+                          {!user.custom_user_linked && (
+                            <button 
+                              onClick={() => syncUser(user.id, user.email)}
+                              className="rounded-lg bg-green-500 px-2 py-1 text-theme-xs font-medium text-white hover:bg-green-600 transition-colors duration-200"
+                            >
+                              Sync
+                            </button>
+                          )}
+                          {!user.email_confirmed && (
+                            <button 
+                              onClick={() => resendConfirmation(user.email)}
+                              className="rounded-lg bg-blue-500 px-2 py-1 text-theme-xs font-medium text-white hover:bg-blue-600 transition-colors duration-200"
+                            >
+                              Resend
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleEdit(user)}
+                            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-theme-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors duration-200"
+                          >
+                            Edit
+                          </button>
+                          <button 
+                            onClick={() => openDeleteModal(user)}
+                            className="rounded-lg bg-red-500 px-2 py-1 text-theme-xs font-medium text-white hover:bg-red-600 transition-colors duration-200"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {filteredUsers.length === 0 && (
+                <div className="py-12 text-center">
+                  <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                  </svg>
+                  <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No cabinet members found</h3>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    {searchTerm ? "Try adjusting your search terms" : "No cabinet members available"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Add/Edit User Modal */}
@@ -526,11 +747,11 @@ export default function UsersList() {
                     name="image"
                     value={formData.image}
                     onChange={handleInputChange}
-                    placeholder="https://example.com/image.jpg or /images/users/photo.jpg or just filename.jpg"
+                    placeholder="https://example.com/image.jpg"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
                   />
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Enter a full URL, relative path (/images/users/photo.jpg), or just filename (photo.jpg)
+                    Enter a full URL to the profile image
                   </p>
                 </div>
                 
@@ -600,25 +821,6 @@ export default function UsersList() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Ministry
-                  </label>
-                  <select
-                    name="ministry_id"
-                    value={formData.ministry_id}
-                    onChange={handleInputChange}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white"
-                  >
-                    <option value="">Select Ministry</option>
-                    {ministries.map(ministry => (
-                      <option key={ministry.id} value={ministry.id}>
-                        {ministry.name} ({ministry.acronym})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Phone
                   </label>
                   <input
@@ -676,7 +878,7 @@ export default function UsersList() {
                 Delete User
               </h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Are you sure you want to delete {userToDelete.name}? This action cannot be undone.
+                Are you sure you want to delete {userToDelete.user_metadata?.name || userToDelete.email}? This action cannot be undone.
               </p>
               
               {/* Error Message in Delete Modal */}
@@ -724,33 +926,79 @@ export default function UsersList() {
   );
 }
 
-// Separate component for user avatar with proper image handling
-function UserAvatar({ user }: { user: User }) {
+// Enhanced UserAvatar component with better image debugging
+function UserAvatar({ user }: { user: AuthUser }) {
   const [imageError, setImageError] = useState(false);
   
-  const getUserImage = (user: User) => {
-    if (user.image) {
-      // Handle both absolute URLs and relative paths
-      if (user.image.startsWith('https') || user.image.startsWith('/')) {
-        return user.image;
-      }
-      // If it's just a filename, assume it's in the images directory
-      return `/images/users/${user.image}`;
+  const getUserImage = (user: AuthUser): string | null => {
+    console.log('🖼️ Debug user image data:', {
+      id: user.id,
+      directImage: user.image,
+      userMetadataImage: user.user_metadata?.image,
+      userMetadataAvatar: user.user_metadata?.avatar_url,
+      userMetadata: user.user_metadata
+    });
+
+    // Priority: 1. Direct image field, 2. user_metadata.image, 3. user_metadata.avatar_url
+    let imagePath = user.image || user.user_metadata?.image || user.user_metadata?.avatar_url;
+    
+    if (!imagePath) {
+      console.log('❌ No image found for user');
+      return null;
     }
-    return null;
+
+    // Handle different types of image paths
+    if (imagePath.startsWith('http')) {
+      console.log('✅ Using external URL:', imagePath);
+      return imagePath;
+    }
+    
+    // Handle local file paths - remove any "public/" prefix if present
+    if (imagePath.startsWith('public/')) {
+      imagePath = imagePath.replace('public/', '');
+    }
+    
+    // Handle local images in the public folder
+    if (imagePath.startsWith('/')) {
+      console.log('✅ Using absolute local path:', imagePath);
+      return imagePath;
+    } else {
+      // Assume it's a relative path in the public/images/users folder
+      console.log('✅ Using relative local path:', `/images/users/${imagePath}`);
+      return `/images/users/${imagePath}`;
+    }
   };
 
-  const getUserInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const getUserInitials = (user: AuthUser) => {
+    const name = user.user_metadata?.name || user.email;
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+  };
+
+  const getRoleColorForAvatar = (role: string) => {
+    const colorMap: Record<string, string> = {
+      President: "bg-purple-500",
+      "Deputy President": "bg-blue-500", 
+      "Prime Cabinet Secretary": "bg-indigo-500",
+      "Cabinet Secretary": "bg-green-500",
+      "Principal Secretary": "bg-teal-500",
+      "Cabinet Secretariat": "bg-orange-500",
+      Director: "bg-cyan-500",
+      "Assistant Director": "bg-cyan-400",
+      Admin: "bg-gray-500",
+      "Attorney General": "bg-red-500",
+      "Secretary to the Cabinet": "bg-amber-500"
+    };
+    return colorMap[role] || "bg-brand-500";
   };
 
   const imageUrl = getUserImage(user);
 
+  // If no image URL or image failed to load, show initials
   if (!imageUrl || imageError) {
     return (
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500/10">
-        <span className="text-sm font-medium text-brand-500">
-          {getUserInitials(user.name)}
+      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${getRoleColorForAvatar(user.role)}`}>
+        <span className="text-sm font-medium text-white">
+          {getUserInitials(user)}
         </span>
       </div>
     );
@@ -762,9 +1010,14 @@ function UserAvatar({ user }: { user: User }) {
         width={40}
         height={40}
         src={imageUrl}
-        alt={`${user.name}'s profile picture`}
+        alt={`${user.user_metadata?.name || user.email}'s profile picture`}
         className="h-full w-full object-cover"
-        onError={() => setImageError(true)}
+        onError={(e) => {
+          console.error('❌ Image failed to load:', imageUrl);
+          setImageError(true);
+        }}
+        onLoad={() => console.log('✅ Image loaded successfully:', imageUrl)}
+        unoptimized={imageUrl.startsWith('/images/')} // Disable optimization for local images if needed
       />
     </div>
   );

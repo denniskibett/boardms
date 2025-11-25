@@ -1,55 +1,58 @@
-// app/api/users/route.ts
+// src/app/api/users/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
-import bcrypt from 'bcryptjs';
+import { supabaseServer } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get('role');
+    const roles = searchParams.get('roles');
     
-    let whereClause = '';
-    const params: any[] = [];
+    const supabase = supabaseServer();
     
+    console.log('🔍 Fetching users with parameters:', { roles, role });
+
+    let query = supabase
+      .from('users')
+      .select(`
+        id,
+        auth_id,
+        name,
+        email,
+        role,
+        image,
+        created_at
+      `)
+      .order('name', { ascending: true });
+
+    // Apply role filtering
     if (role && role !== 'all') {
-      whereClause = 'WHERE u.role = $1';
-      params.push(role);
+      console.log(`🎯 Filtering by single role: ${role}`);
+      query = query.eq('role', role);
+    } else if (roles) {
+      const roleList = roles.split(',');
+      console.log(`🎯 Filtering by multiple roles:`, roleList);
+      query = query.in('role', roleList);
     }
 
-    const users = await query(`
-      SELECT 
-        u.id,
-        u.image,  
-        u.name,
-        u.email,
-        u.role,
-        u.status,
-        u.phone,
-        u.last_login,
-        u.created_at,
-        u.updated_at,
-        m.id as ministry_id,
-        m.name as ministry_name
-      FROM users u
-      LEFT JOIN ministries m ON u.id = m.cabinet_secretary
-      ${whereClause}
-      ORDER BY 
-        CASE 
-          WHEN u.role = 'President' THEN 1
-          WHEN u.role = 'Deputy President' THEN 2
-          WHEN u.role = 'Prime Cabinet Secretary' THEN 3
-          WHEN u.role = 'Cabinet Secretary' THEN 4
-          WHEN u.role = 'Principal Secretary' THEN 5
-          WHEN u.role = 'Attorney General' THEN 6
-          WHEN u.role = 'Secretary to the Cabinet' THEN 7
-          ELSE 8
-        END,
-        u.name
-    `, params);
+    const { data: users, error } = await query;
 
-    return NextResponse.json(users.rows);
+    if (error) {
+      console.error('❌ Error fetching users:', error);
+      throw error;
+    }
+
+    console.log(`✅ Found ${users?.length || 0} users`);
+
+    if (!users || users.length === 0) {
+      console.log('👥 No users found with the specified filters');
+      return NextResponse.json([]);
+    }
+
+    return NextResponse.json(users);
+    
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('❌ Error in users API:', error);
     return NextResponse.json(
       { error: 'Failed to fetch users' },
       { status: 500 }
@@ -62,53 +65,72 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, image, email, password, role, status, phone, ministry_id } = body;
 
-    console.log('Creating user with data:', { name, image, email, role, status, phone, ministry_id });
+    console.log('👤 Creating user:', { name, email, role });
 
-    // Validate required fields
-    if (!name || !email || !password || !role) {
+    // 1. First create user in Supabase Auth
+    const supabase = supabaseServer();
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: email.toLowerCase(),
+      password: password,
+      email_confirm: true,
+      user_metadata: { name, role }
+    });
+
+    if (authError) {
+      console.error('❌ Auth creation failed:', authError);
       return NextResponse.json(
-        { error: 'Name, email, password, and role are required' },
+        { error: `Auth creation failed: ${authError.message}` },
         { status: 400 }
       );
     }
 
-    // Check if user already exists
-    const existingUser = await query(
-      'SELECT id FROM users WHERE email = $1',
-      [email.toLowerCase()]
-    );
+    // 2. Then create profile in your users table using Supabase client
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .insert({
+        auth_id: authData.user.id,
+        name: name,
+        image: image || null,
+        email: email.toLowerCase(),
+        role: role,
+        status: status || 'active',
+        phone: phone || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select('id, name, email, role, status, phone, created_at')
+      .single();
 
-    if (existingUser.rows.length > 0) {
+    if (userError) {
+      console.error('❌ User profile creation failed:', userError);
+      
+      // Clean up: delete the auth user if profile creation fails
+      await supabase.auth.admin.deleteUser(authData.user.id);
+      
       return NextResponse.json(
-        { error: 'User with this email already exists' },
+        { error: `User profile creation failed: ${userError.message}` },
         { status: 400 }
       );
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 3. Handle ministry assignment if needed
+    if (ministry_id && userData) {
+      const { error: ministryError } = await supabase
+        .from('ministries')
+        .update({ cabinet_secretary: userData.id })
+        .eq('id', ministry_id);
 
-    // Insert new user
-    const result = await query(
-      `INSERT INTO users (name, image, email, password, role, status, phone) 
-       VALUES ($1, $2, $3, $4, $5, $6) 
-       RETURNING id, name, email, role, status, phone, created_at`,
-      [name, image || null, email.toLowerCase(), hashedPassword, role, status || 'active', phone || null]
-    );
-
-    const newUser = result.rows[0];
-
-    // If ministry_id is provided, update the ministry
-    if (ministry_id) {
-      await query(
-        'UPDATE ministries SET cabinet_secretary = $1 WHERE id = $2',
-        [newUser.id, ministry_id]
-      );
+      if (ministryError) {
+        console.error('❌ Ministry assignment failed:', ministryError);
+        // Continue anyway - this is not critical
+      }
     }
 
-    return NextResponse.json(newUser, { status: 201 });
+    console.log('✅ User created successfully:', userData.id);
+    return NextResponse.json(userData, { status: 201 });
+
   } catch (error) {
-    console.error('Error creating user:', error);
+    console.error('❌ Error creating user:', error);
     return NextResponse.json(
       { error: 'Failed to create user' },
       { status: 500 }

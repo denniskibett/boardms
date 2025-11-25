@@ -1,4 +1,4 @@
-// app/components/meetings/MeetingCalendar.tsx - FIXED VERSION
+// app/components/meetings/MeetingCalendar.tsx - UPDATED USERS SECTION
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import FullCalendar from "@fullcalendar/react";
@@ -181,12 +181,14 @@ const Calendar: React.FC = () => {
         console.log("Starting data fetch...");
         
         // Fetch categories by type in parallel with proper error handling
+        // FIXED: Use correct users API parameters
         const [locationsRes, meetingTypesRes, meetingStatusesRes, coloursRes, chairsRes, meetingsRes] = await Promise.all([
           fetch('/api/categories?type=location'),
           fetch('/api/categories?type=meeting'),
           fetch('/api/categories?type=meeting_status'),
           fetch('/api/categories?type=colour'),
-          fetch('/api/users?role=all'),
+          // FIXED: Use correct role parameters for chairs
+          fetch('/api/users?roles=President,Deputy President,Cabinet Secretary,Principal Secretary,Prime Cabinet Secretary,Attorney General&orderBy=name&order=asc'),
           fetch('/api/meetings')
         ]);
 
@@ -208,6 +210,17 @@ const Calendar: React.FC = () => {
           chairs: chairsData.length,
           meetings: meetingsData.length
         });
+
+        // Log chairs for debugging
+        if (chairsData.length > 0) {
+          console.log("👥 Chairs loaded:", chairsData.map((chair: User) => ({
+            id: chair.id,
+            name: chair.name,
+            role: chair.role
+          })));
+        } else {
+          console.log("⚠️ No chairs loaded - check users API endpoint");
+        }
 
         setLocations(locationsData);
         setMeetingTypes(meetingTypesData);
@@ -263,6 +276,14 @@ const Calendar: React.FC = () => {
 
     fetchData();
   }, []);
+
+  // Add debug effect to monitor chairs state
+  useEffect(() => {
+    console.log("🔄 Chairs state updated:", {
+      chairsCount: chairs.length,
+      chairs: chairs.map(c => ({ id: c.id, name: c.name, role: c.role }))
+    });
+  }, [chairs]);
 
   const handleDateSelect = (selectInfo: DateSelectArg) => {
     resetForm();
@@ -601,6 +622,9 @@ const Calendar: React.FC = () => {
             <p className="text-sm text-gray-600 dark:text-gray-400">
               All times are displayed in <strong>{systemSettings.timezone}</strong> timezone
             </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Available chairs: {chairs.length} users loaded
+            </p>
           </div>
           <div className="text-right text-sm text-gray-600 dark:text-gray-400">
             <div>Date Format: <strong>{systemSettings.date_format}</strong></div>
@@ -721,7 +745,7 @@ const Calendar: React.FC = () => {
                       ))}
                     </select>
                     {meetingTypes.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">No meeting types found. Check API endpoint.</p>
+                      <p className="text-xs text-red-500 mt-1">No meeting types found.</p>
                     )}
                   </div>
 
@@ -743,7 +767,7 @@ const Calendar: React.FC = () => {
                       ))}
                     </select>
                     {meetingStatuses.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">No statuses found. Check API endpoint.</p>
+                      <p className="text-xs text-red-500 mt-1">No statuses found.</p>
                     )}
                   </div>
                 </div>
@@ -796,7 +820,7 @@ const Calendar: React.FC = () => {
                       ))}
                     </select>
                     {locations.length === 0 && (
-                      <p className="text-xs text-red-500 mt-1">No locations found. Check API endpoint.</p>
+                      <p className="text-xs text-red-500 mt-1">No locations found.</p>
                     )}
                   </div>
 
@@ -817,6 +841,11 @@ const Calendar: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                    {chairs.length === 0 && (
+                      <p className="text-xs text-yellow-600 mt-1">
+                        No chairs available. Please check if users with appropriate roles exist.
+                      </p>
+                    )}
                     {formData.type && formData.chair_id && (
                       <p className="text-xs text-green-600 mt-1">
                         Auto-assigned for {formData.type}
@@ -848,7 +877,7 @@ const Calendar: React.FC = () => {
                     ))}
                   </div>
                   {colours.length === 0 && (
-                    <p className="text-xs text-gray-500 mt-1">Using default colours. Add colour categories via API.</p>
+                    <p className="text-xs text-gray-500 mt-1">Using default colours.</p>
                   )}
                 </div>
 
@@ -904,9 +933,8 @@ const Calendar: React.FC = () => {
   );
 };
 
-// Helper function for colour options (keep your existing implementation)
+// Helper function for colour options
 const getColourOptions = () => {
-  // ... your existing getColourOptions implementation
   return [
     { value: "#3b82f6", label: "Blue", bg: "bg-blue-500" },
     { value: "#ef4444", label: "Red", bg: "bg-red-500" },

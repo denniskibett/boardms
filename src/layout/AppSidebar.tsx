@@ -29,7 +29,7 @@ const navItems: NavItem[] = [
   {
     icon: <DashboardIcon />,
     name: "Dashboard",
-    path: "/dashboard",
+    path: "/",
   },
   // {
   //   icon: <DocumentIcon />,
