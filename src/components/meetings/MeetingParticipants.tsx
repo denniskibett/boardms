@@ -10,11 +10,13 @@ import {
   Loader2,
   X,
   UsersIcon,
-  RefreshCw
+  RefreshCw,
+  UserMinus,
+  HelpCircle
 } from 'lucide-react';
 
 interface User {
-  id: string; // This should be auth_id (UUID)
+  id: string;
   auth_id: string;
   name: string;
   email: string;
@@ -31,7 +33,7 @@ interface Group {
 interface MeetingParticipant {
   id: string;
   meeting_id: string;
-  user_id: string | null; // UUID
+  user_id: string | null;
   group_id: string | null;
   rsvp_id: string | null;
   type: 'individual' | 'group';
@@ -84,38 +86,29 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     participants: false
   });
 
-  // FIXED: UUID validation helper
+  // UUID validation helper
   const isValidUUID = (id: string | null | undefined): boolean => {
     if (!id) return false;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   };
 
-  // FIXED: Filter and validate users to only include those with valid UUIDs
+  // Filter and validate users
   const filterValidUsers = (users: any[]): User[] => {
     return users
       .filter(user => user && isValidUUID(user.auth_id))
       .map(user => ({
         ...user,
-        id: user.auth_id, // Use auth_id as primary ID
-        auth_id: user.auth_id // Keep original
+        id: user.auth_id,
+        auth_id: user.auth_id
       }));
   };
 
-  // FIXED: Format participants with UUID validation
+  // Format participants
   const formatParticipants = useCallback((participantsData: any[]): MeetingParticipant[] => {
-    console.log('🔄 Formatting participants data:', participantsData);
-    
     return participantsData
       .filter(participant => {
-        // Only include participants with valid UUID user_id or group participants
-        const isValid = participant.type === 'group' || 
-                       (participant.type === 'individual' && isValidUUID(participant.user_id));
-        
-        if (!isValid) {
-          console.warn('⚠️ Filtering out invalid participant:', participant);
-        }
-        
-        return isValid;
+        return participant.type === 'group' || 
+               (participant.type === 'individual' && isValidUUID(participant.user_id));
       })
       .map(participant => {
         let userImage = undefined;
@@ -125,7 +118,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             : `/meetings/${participant.user.image}`;
         }
 
-        const formatted: MeetingParticipant = {
+        return {
           id: participant.id?.toString(),
           meeting_id: participant.meeting_id?.toString(),
           user_id: participant.user_id || null,
@@ -143,30 +136,13 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
           group: participant.group,
           rsvp: participant.rsvp || participant.rsvp_status
         };
-
-        console.log(`📝 Participant ${formatted.id}:`, {
-          type: formatted.type,
-          user_id: formatted.user_id,
-          user: formatted.user?.name,
-          rsvp_id: formatted.rsvp_id
-        });
-
-        return formatted;
       });
   }, []);
 
-  // FIXED: Data loading with UUID validation
+  // Data loading
   const reloadAllData = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('🔄 Reloading all data with UUID validation...');
-      
-      hasLoadedRef.current = {
-        users: false,
-        groups: false,
-        rsvp: false,
-        participants: false
-      };
 
       const [participantsRes, usersRes, groupsRes, rsvpRes] = await Promise.all([
         fetch(`/api/meetings/${meetingId}/participants`).then(res => {
@@ -187,11 +163,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         })
       ]);
 
-      // FIXED: Filter and validate users
       const validUsers = filterValidUsers(Array.isArray(usersRes) ? usersRes : []);
-      console.log(`✅ Valid users with UUIDs: ${validUsers.length} (filtered from ${usersRes.length})`);
-
-      // FIXED: Transform groups to ensure user IDs are valid UUIDs
       const validGroups = Array.isArray(groupsRes) ? groupsRes.map(group => ({
         ...group,
         users: filterValidUsers(group.users || [])
@@ -202,20 +174,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       setAvailableUsers(validUsers);
       setAvailableGroups(validGroups);
       setRsvpOptions(Array.isArray(rsvpRes) ? rsvpRes : []);
-      
-      hasLoadedRef.current = {
-        users: true,
-        groups: true,
-        rsvp: true,
-        participants: true
-      };
-
-      console.log('✅ All data reloaded with UUID validation:', {
-        participants: formattedParticipants.length,
-        users: validUsers.length,
-        groups: validGroups.length,
-        rsvp: rsvpRes.length
-      });
       
     } catch (error: any) {
       console.error('❌ Error reloading data:', error);
@@ -228,7 +186,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
   const loadRequiredData = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('🔄 Loading required data with UUID validation...');
 
       const dataPromises = [];
 
@@ -243,7 +200,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               const formatted = formatParticipants(data);
               setParticipants(formatted);
               hasLoadedRef.current.participants = true;
-              console.log('✅ Participants loaded:', formatted.length);
             })
         );
       }
@@ -256,11 +212,9 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               return res.json();
             })
             .then(data => {
-              // FIXED: Filter and validate users
               const validUsers = filterValidUsers(Array.isArray(data) ? data : []);
               setAvailableUsers(validUsers);
               hasLoadedRef.current.users = true;
-              console.log('✅ Valid users loaded with UUIDs:', validUsers.length);
             })
         );
       }
@@ -273,14 +227,12 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               return res.json();
             })
             .then(data => {
-              // FIXED: Transform groups to ensure UUID validation
               const groupsData = Array.isArray(data) ? data.map(group => ({
                 ...group,
                 users: filterValidUsers(group.users || [])
               })) : [];
               setAvailableGroups(groupsData);
               hasLoadedRef.current.groups = true;
-              console.log('✅ Groups loaded with validated users:', groupsData.length);
             })
         );
       }
@@ -295,13 +247,11 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             .then(data => {
               setRsvpOptions(Array.isArray(data) ? data : []);
               hasLoadedRef.current.rsvp = true;
-              console.log('✅ RSVP options loaded:', data.length);
             })
         );
       }
 
       await Promise.all(dataPromises);
-      console.log('✅ All required data loaded with UUID validation');
 
     } catch (error: any) {
       console.error('❌ Error loading data:', error);
@@ -313,7 +263,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
 
   useEffect(() => {
     if (initialParticipants && initialParticipants.length > 0) {
-      console.log('🔄 Syncing participants from parent:', initialParticipants.length);
       const formattedParticipants = formatParticipants(initialParticipants);
       setParticipants(formattedParticipants);
       hasLoadedRef.current.participants = true;
@@ -326,7 +275,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     }
   }, [meetingId, loadRequiredData]);
 
-  // FIXED: Filter available users and groups with UUID validation
+  // Filter available users and groups
   const filteredUsers = availableUsers
     .filter(user => 
       user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -334,7 +283,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       user?.role?.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .filter(user => 
-      !participants.some(p => p.user_id === user.id) // UUID comparison
+      !participants.some(p => p.user_id === user.id)
     );
 
   const filteredGroups = availableGroups
@@ -343,52 +292,37 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     )
     .filter(group => {
       if (!group.users || group.users.length === 0) return false;
-      
       const usersNotInMeeting = group.users.filter(user => 
-        !participants.some(p => p.user_id === user.id) // UUID comparison
+        !participants.some(p => p.user_id === user.id)
       );
-      
       return usersNotInMeeting.length > 0;
     });
 
-  // FIXED: Add participants with UUID validation
+  // Add participants
   const addParticipants = useCallback(async () => {
     if (selectedUsers.length === 0 && selectedGroups.length === 0) return;
 
     try {
       setIsAdding(true);
-      
-      console.log('🔄 Adding participants with UUID validation:', {
-        selectedUsers,
-        selectedGroups
-      });
 
-      // Extract users from groups + individual selections
       let allUserIds = [...selectedUsers];
       
       if (selectedGroups.length > 0) {
         selectedGroups.forEach(groupId => {
           const group = availableGroups.find(g => g.id === groupId);
           if (group?.users) {
-            console.log(`📝 Processing group ${group.name}:`, group.users);
-            
-            // Use ONLY validated UUIDs
             const groupUserIds = group.users
               .map(user => user.auth_id)
               .filter(uuid => isValidUUID(uuid));
-            
             allUserIds = [...allUserIds, ...groupUserIds];
           }
         });
       }
 
-      // Remove duplicates and validate UUIDs
       allUserIds = [...new Set(allUserIds)].filter(id => isValidUUID(id));
 
-      console.log('📤 Final validated UUIDs to add:', allUserIds);
-
       if (allUserIds.length === 0) {
-        alert('No valid users to add. Please check that your selections contain users with valid UUIDs.');
+        alert('No valid users to add.');
         return;
       }
 
@@ -406,9 +340,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       const responseData = await response.json();
 
       if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(`Meeting not found. Please refresh the page and try again.`);
-        }
         throw new Error(responseData.error || 'Failed to add participants');
       }
 
@@ -418,7 +349,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       }
 
       const formattedNewParticipants = formatParticipants(responseData);
-      
       const updatedParticipants = [...participants, ...formattedNewParticipants];
       setParticipants(updatedParticipants);
       setSelectedUsers([]);
@@ -429,12 +359,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         onParticipantsUpdate(updatedParticipants);
       }
 
-      console.log('✅ Participants added successfully:', formattedNewParticipants.length);
-      
-      if (formattedNewParticipants.length > 0) {
-        alert(`Successfully added ${formattedNewParticipants.length} participants to the meeting.`);
-      }
-      
       await reloadAllData();
       
     } catch (error: any) {
@@ -444,8 +368,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       setIsAdding(false);
     }
   }, [meetingId, selectedUsers, selectedGroups, participants, availableGroups, formatParticipants, onParticipantsUpdate, reloadAllData]);
-
-  // ... (rest of the functions remain the same - removeParticipant, updateParticipantRsvp, etc.)
 
   const removeParticipant = useCallback(async (participantId: string) => {
     if (!confirm('Are you sure you want to remove this participant?')) return;
@@ -467,7 +389,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         onParticipantsUpdate(updatedParticipants);
       }
       
-      console.log('✅ Participant removed:', participantId);
       await reloadAllData();
       
     } catch (error: any) {
@@ -508,8 +429,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         onParticipantsUpdate(updatedParticipants);
       }
       
-      console.log('✅ RSVP updated for participant:', participantId);
-      
     } catch (error: any) {
       console.error('❌ Error updating RSVP:', error);
       alert(error.message || 'Failed to update RSVP status');
@@ -533,25 +452,28 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
   }, []);
 
   const handleManualRefresh = useCallback(async () => {
-    console.log('🔄 Manual refresh triggered');
-    
     if (onRefresh) {
       await onRefresh();
     }
-    
     await reloadAllData();
   }, [onRefresh, reloadAllData]);
 
+  // Helper functions
   const getRsvpBadge = useCallback((rsvpType: string) => {
     const baseClasses = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
     
     switch (rsvpType?.toLowerCase()) {
       case 'accepted':
+      case 'attending':
         return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300`;
       case 'declined':
+      case 'not attending':
         return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300`;
       case 'tentative':
         return `${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300`;
+      case 'pending':
+      case 'no response':
+        return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300`;
       default:
         return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300`;
     }
@@ -597,11 +519,64 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     return count;
   }, [participants]);
 
+  // NEW: Calculate RSVP statistics
+  const getRsvpStats = useCallback(() => {
+    const stats: { [key: string]: { count: number; percentage: number; color: string } } = {};
+    
+    // Initialize all RSVP statuses
+    rsvpOptions.forEach(rsvp => {
+      stats[rsvp.name] = { count: 0, percentage: 0, color: getRsvpColor(rsvp.name) };
+    });
+    
+    // Add pending for participants without RSVP
+    stats['Pending'] = { count: 0, percentage: 0, color: getRsvpColor('Pending') };
+
+    // Count participants for each RSVP status
+    participants.forEach(participant => {
+      const rsvpName = getRsvpStatusName(participant.rsvp_id);
+      if (stats[rsvpName]) {
+        stats[rsvpName].count += 1;
+      } else {
+        stats[rsvpName] = { count: 1, percentage: 0, color: getRsvpColor(rsvpName) };
+      }
+    });
+
+    // Calculate percentages
+    const totalParticipants = participants.length;
+    Object.keys(stats).forEach(key => {
+      stats[key].percentage = totalParticipants > 0 ? (stats[key].count / totalParticipants) * 100 : 0;
+    });
+
+    return stats;
+  }, [participants, rsvpOptions, getRsvpStatusName]);
+
+  const getRsvpColor = (rsvpName: string) => {
+    switch (rsvpName.toLowerCase()) {
+      case 'accepted':
+      case 'attending':
+        return 'bg-green-500';
+      case 'declined':
+      case 'not attending':
+        return 'bg-red-500';
+      case 'tentative':
+        return 'bg-yellow-500';
+      case 'pending':
+      case 'no response':
+        return 'bg-gray-500';
+      default:
+        return 'bg-blue-500';
+    }
+  };
+
   const getParticipantStats = useCallback(() => {
     const individualCount = participants.filter(p => p.type === 'individual').length;
     const groupCount = participants.filter(p => p.type === 'group').length;
-    const acceptedCount = participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Accepted').length;
-    const declinedCount = participants.filter(p => getRsvpStatusName(p.rsvp_id) === 'Declined').length;
+    const acceptedCount = participants.filter(p => 
+      ['accepted', 'attending'].includes(getRsvpStatusName(p.rsvp_id).toLowerCase())
+    ).length;
+    const declinedCount = participants.filter(p => 
+      ['declined', 'not attending'].includes(getRsvpStatusName(p.rsvp_id).toLowerCase())
+    ).length;
     const pendingCount = participants.filter(p => !p.rsvp_id || getRsvpStatusName(p.rsvp_id) === 'Pending').length;
 
     return {
@@ -615,6 +590,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
   }, [participants, getRsvpStatusName, getTotalAttendeeCount]);
 
   const stats = getParticipantStats();
+  const rsvpStats = getRsvpStats();
 
   if (isLoading && participants.length === 0) {
     return (
@@ -661,7 +637,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             <button
               onClick={handleManualRefresh}
               disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg disabled:opacity-50 transition-colors"
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -672,39 +648,59 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             </button>
           </div>
 
-          {/* Enhanced Debug Section */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-xs">
-            <h4 className="font-semibold text-yellow-800 mb-2">Debug Info:</h4>
-            <div className="grid grid-cols-2 gap-2">
-              <div>Participants: {participants.length}</div>
-              <div>Available Users: {availableUsers.length}</div>
-              <div>Available Groups: {availableGroups.length}</div>
-              <div>Filtered Groups: {filteredGroups.length}</div>
-              <div>Selected Users: {selectedUsers.length}</div>
-              <div>Selected Groups: {selectedGroups.length}</div>
+          {/* Quick Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
+              <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalAttendees}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Total Attendees</p>
             </div>
-            <div className="mt-2">
-              <div>Participant Breakdown:</div>
-              <div>• Individual: {stats.individualCount}</div>
-              <div>• Groups: {stats.groupCount}</div>
-              <div>• Total Attendees: {stats.totalAttendees}</div>
+            
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
+              <UserCheck className="h-6 w-6 text-green-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.acceptedCount}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Accepted</p>
             </div>
-            <div className="mt-2">
-              <div>Group Analysis:</div>
-              {availableGroups.map((group, index) => {
-                const existingMembers = group.users?.filter(user => 
-                  participants.some(p => p.user_id === user.id)
-                ) || [];
-                const newMembers = group.users?.filter(user => 
-                  !participants.some(p => p.user_id === user.id)
-                ) || [];
-                
-                return (
-                  <div key={group.id} className="text-xs mt-1">
-                    {group.name}: {existingMembers.length} existing, {newMembers.length} new members
+            
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
+              <UserX className="h-6 w-6 text-red-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.declinedCount}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Declined</p>
+            </div>
+            
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
+              <Clock className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                {stats.pendingCount}
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Pending</p>
+            </div>
+          </div>
+
+          {/* RSVP Status Breakdown */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+            <h4 className="font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <HelpCircle className="h-5 w-5 text-blue-500" />
+              RSVP Status Breakdown
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {Object.entries(rsvpStats).map(([status, data]) => (
+                <div key={status} className="text-center">
+                  <div className={`w-12 h-12 ${data.color} rounded-full flex items-center justify-center mx-auto mb-2`}>
+                    <span className="text-white font-bold text-sm">{data.count}</span>
                   </div>
-                );
-              })}
+                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                    {status}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {data.percentage.toFixed(1)}%
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -723,7 +719,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                   placeholder="Search users or groups..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                 />
               </div>
 
@@ -748,9 +744,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                   }`}
                 >
                   Groups ({filteredGroups.length})
-                  {availableGroups.length > 0 && filteredGroups.length === 0 && (
-                    <span className="ml-1 text-xs text-orange-500">(all members added)</span>
-                  )}
                 </button>
               </div>
 
@@ -759,14 +752,11 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 <div className="border border-gray-200 dark:border-gray-600 rounded-lg max-h-48 overflow-y-auto">
                   <div className="p-3 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Available {activeTab === 'users' ? 'Users' : 'Groups'} ({
-                        activeTab === 'users' ? filteredUsers.length : filteredGroups.length
-                      })
+                      Available {activeTab === 'users' ? 'Users' : 'Groups'} ({activeTab === 'users' ? filteredUsers.length : filteredGroups.length})
                     </p>
                   </div>
                   <div className="divide-y divide-gray-200 dark:divide-gray-600">
                     {activeTab === 'users' ? (
-                      // Users list
                       filteredUsers.map(user => (
                         <div
                           key={user.id}
@@ -811,7 +801,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                         </div>
                       ))
                     ) : (
-                      // Groups list
                       filteredGroups.map(group => (
                         <div
                           key={group.id}
@@ -855,19 +844,11 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 <div className="flex items-center justify-between pt-2">
                   <p className="text-sm text-blue-600 dark:text-blue-400">
                     {selectedUsers.length} user(s) and {selectedGroups.length} group(s) selected
-                    {selectedGroups.length > 0 && (
-                      <span className="block text-xs text-gray-500">
-                        ({selectedGroups.reduce((total, groupId) => {
-                          const group = availableGroups.find(g => g.id === groupId);
-                          return total + (group?.users?.length || 0);
-                        }, 0)} total users from groups)
-                      </span>
-                    )}
                   </p>
                   <button
                     onClick={addParticipants}
                     disabled={isAdding}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
                   >
                     {isAdding ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -977,7 +958,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                         <select
                           value={participant.rsvp_id || ''}
                           onChange={(e) => updateParticipantRsvp(participant.id, e.target.value)}
-                          className="px-2 py-1 border border-gray-300 rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                         >
                           <option value="">Pending</option>
                           {rsvpOptions.map(rsvp => (
@@ -1020,39 +1001,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Statistics */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
-              <Users className="h-6 w-6 text-blue-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.totalAttendees}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Total Attendees</p>
-            </div>
-            
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
-              <UserCheck className="h-6 w-6 text-green-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.acceptedCount}
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Accepted</p>
-            </div>
-            
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
-              <UserX className="h-6 w-6 text-red-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.declinedCount}
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Declined</p>
-            </div>
-            
-            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
-              <Clock className="h-6 w-6 text-yellow-500 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                {stats.pendingCount}
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Pending</p>
-            </div>
           </div>
         </>
       )}

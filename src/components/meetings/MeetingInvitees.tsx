@@ -381,7 +381,23 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
           )}
         </div>
 
-       
+        {/* FIXED: Debug info shows URL meeting ID */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              <div><strong>URL Meeting ID:</strong> {urlMeetingId}</div>
+              <div><strong>Prop Meeting ID:</strong> {meeting.id}</div>
+              <div><strong>Current Meeting ID:</strong> {currentMeetingId}</div>
+              <div><strong>Current Participants:</strong> {totalParticipants}</div>
+              <div><strong>Auto-reload:</strong> {realTimeUpdates ? 'Enabled' : 'Disabled'}</div>
+              <div><strong>Reload count:</strong> {reloadCount}/{maxReloads}</div>
+              <div><strong>Last update:</strong> {lastUpdate.toISOString()}</div>
+              <div className="mt-2 text-green-600">
+                ✅ Showing participants for ACTUAL meeting ID: {currentMeetingId}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
