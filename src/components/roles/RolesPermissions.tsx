@@ -141,6 +141,22 @@ const defaultRoles: Role[] = [
     },
     userCount: 3,
   },
+  {
+    id: "user",
+    name: "User",
+    description: "General user with limited access",
+    permissions: {
+      memos: ["read"],
+      committees: ["read"],
+      meetings: ["read"],
+      decisions: ["read"],
+      actionLetters: ["read"],
+      users: ["read"],
+      reports: ["read"],
+      settings: ["read"],
+    },
+    userCount: 3,
+  },
 ];
 
 const permissionLabels = {

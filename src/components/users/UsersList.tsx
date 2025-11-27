@@ -1,3 +1,4 @@
+// src/app/users/page.tsx
 "use client";
 import React, { useState, useEffect } from "react";
 import { useUser } from "@/hooks/useUser";
@@ -97,6 +98,91 @@ const roles: UserRole[] = [
 
 const statusOptions: UserStatus[] = ["active", "inactive", "pending", "suspended"];
 
+// Enhanced UserAvatar component with better error handling
+function UserAvatar({ user }: { user: AuthUser }) {
+  const [imageError, setImageError] = useState(false);
+  
+  const getUserImage = (user: AuthUser): string | null => {
+    try {
+      // Priority order for image sources
+      const imagePath = user.image || user.user_metadata?.image || user.user_metadata?.avatar_url;
+      
+      if (!imagePath) {
+        return null;
+      }
+
+      // Handle external URLs
+      if (imagePath.startsWith('http')) {
+        return imagePath;
+      }
+      
+      // Handle local paths
+      if (imagePath.startsWith('/')) {
+        return imagePath;
+      }
+      
+      // Default to images folder
+      return `/images/users/${imagePath}`;
+    } catch (error) {
+      console.error('Error getting user image:', error);
+      return null;
+    }
+  };
+
+  const getUserInitials = (user: AuthUser) => {
+    try {
+      const name = user.user_metadata?.name || user.email || '';
+      return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    } catch {
+      return 'US';
+    }
+  };
+
+  const getRoleColorForAvatar = (role: string) => {
+    const colorMap: Record<string, string> = {
+      President: "bg-purple-500",
+      "Deputy President": "bg-blue-500", 
+      "Prime Cabinet Secretary": "bg-indigo-500",
+      "Cabinet Secretary": "bg-green-500",
+      "Principal Secretary": "bg-teal-500",
+      "Cabinet Secretariat": "bg-orange-500",
+      Director: "bg-cyan-500",
+      "Assistant Director": "bg-cyan-400",
+      Admin: "bg-gray-500",
+      "Attorney General": "bg-red-500",
+      "Secretary to the Cabinet": "bg-amber-500"
+    };
+    return colorMap[role] || "bg-brand-500";
+  };
+
+  const imageUrl = getUserImage(user);
+
+  if (!imageUrl || imageError) {
+    return (
+      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${getRoleColorForAvatar(user.role)}`}>
+        <span className="text-sm font-medium text-white">
+          {getUserInitials(user)}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-10 w-10 overflow-hidden rounded-full">
+      <Image
+        width={40}
+        height={40}
+        src={imageUrl}
+        alt={`${user.user_metadata?.name || user.email}'s profile picture`}
+        className="h-full w-full object-cover"
+        onError={() => setImageError(true)}
+        unoptimized={imageUrl.startsWith('/images/')}
+      />
+    </div>
+  );
+}
+
+// Main component with error boundary
 export default function UsersList() {
   const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
   const [filter, setFilter] = useState<string>("all");
@@ -108,6 +194,7 @@ export default function UsersList() {
   const [userToDelete, setUserToDelete] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [hasError, setHasError] = useState(false);
   const { user: currentUser, loading: userLoading } = useUser();
 
   // Form state
@@ -122,40 +209,68 @@ export default function UsersList() {
   });
 
   useEffect(() => {
-    fetchAuthUsers();
-  }, []);
+    let mounted = true;
 
-  const fetchAuthUsers = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch('/api/auth/users');
-      if (!response.ok) {
-        throw new Error('Failed to fetch authentication users');
-      }
-      const data = await response.json();
-      
-      // Sort users by role hierarchy first, then by ID ascending
-      const sortedUsers = (data.users || []).sort((a: AuthUser, b: AuthUser) => {
-        const roleA = roleHierarchy[a.role as UserRole] || 999;
-        const roleB = roleHierarchy[b.role as UserRole] || 999;
+    const fetchAuthUsers = async () => {
+      try {
+        console.log('🔄 Starting to fetch auth users...');
+        setLoading(true);
+        setError(null);
         
-        if (roleA !== roleB) {
-          return roleA - roleB;
+        const response = await fetch('/api/auth/users');
+        console.log('📡 API Response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('❌ API Error response:', errorText);
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        // If same role, sort by ID ascending
-        return a.id.localeCompare(b.id);
-      });
-      
-      setAuthUsers(sortedUsers);
-    } catch (error) {
-      console.error('Error fetching auth users:', error);
-      setError('Failed to load authentication users. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+        const data = await response.json();
+        console.log('✅ API Data received:', { 
+          userCount: data.users?.length,
+          total: data.total 
+        });
+        
+        if (!mounted) return;
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        // Sort users by role hierarchy first, then by ID ascending
+        const sortedUsers = (data.users || []).sort((a: AuthUser, b: AuthUser) => {
+          const roleA = roleHierarchy[a.role as UserRole] || 999;
+          const roleB = roleHierarchy[b.role as UserRole] || 999;
+          
+          if (roleA !== roleB) {
+            return roleA - roleB;
+          }
+          
+          // If same role, sort by ID ascending
+          return a.id.localeCompare(b.id);
+        });
+        
+        setAuthUsers(sortedUsers);
+      } catch (error) {
+        console.error('💥 Error fetching auth users:', error);
+        if (mounted) {
+          setError('Failed to load authentication users. Please try again.');
+          setHasError(true);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchAuthUsers();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredUsers = authUsers.filter(user => {
     const matchesFilter = filter === "all" || user.role === filter;
@@ -219,7 +334,18 @@ export default function UsersList() {
 
       if (response.ok) {
         setSuccess('User created successfully!');
-        await fetchAuthUsers();
+        // Refresh the users list
+        const refreshResponse = await fetch('/api/auth/users');
+        const refreshData = await refreshResponse.json();
+        if (refreshData.users) {
+          const sortedUsers = refreshData.users.sort((a: AuthUser, b: AuthUser) => {
+            const roleA = roleHierarchy[a.role as UserRole] || 999;
+            const roleB = roleHierarchy[b.role as UserRole] || 999;
+            if (roleA !== roleB) return roleA - roleB;
+            return a.id.localeCompare(b.id);
+          });
+          setAuthUsers(sortedUsers);
+        }
         setTimeout(() => {
           setIsModalOpen(false);
           resetForm();
@@ -252,7 +378,8 @@ export default function UsersList() {
 
       if (response.ok) {
         setSuccess('User deleted successfully!');
-        await fetchAuthUsers();
+        // Refresh the users list
+        setAuthUsers(prev => prev.filter(user => user.id !== userToDelete.id));
         setTimeout(() => {
           setIsDeleteModalOpen(false);
           setUserToDelete(null);
@@ -279,7 +406,12 @@ export default function UsersList() {
 
       if (response.ok) {
         setSuccess('User synced successfully!');
-        await fetchAuthUsers();
+        // Refresh the users list
+        const refreshResponse = await fetch('/api/auth/users');
+        const refreshData = await refreshResponse.json();
+        if (refreshData.users) {
+          setAuthUsers(refreshData.users);
+        }
       } else {
         const error = await response.json();
         setError(`Sync failed: ${error.error}`);
@@ -384,6 +516,28 @@ export default function UsersList() {
     synced: authUsers.filter(u => u.custom_user_linked).length,
     notSynced: authUsers.filter(u => !u.custom_user_linked).length,
   };
+
+  // Show error state
+  if (hasError) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] p-6">
+        <div className="text-center py-8">
+          <div className="text-red-500 text-lg font-semibold mb-2">
+            Failed to load users
+          </div>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            There was an error loading the users data.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-brand-500 text-white px-4 py-2 rounded-lg hover:bg-brand-600"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -588,30 +742,22 @@ export default function UsersList() {
                         <div className="flex items-center gap-3">
                           <UserAvatar user={user} />
                           <div>
-<div>
-  <Link 
-    href={`/users/${user.id}`}
-    className="block font-medium text-gray-800 text-theme-sm dark:text-white/90 hover:text-brand-600 dark:hover:text-brand-400"
-  >
-    {user.user_metadata?.name || user.email}
-  </Link>
-  <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-    {user.email}
-  </span>
-  {user.phone && (
-    <span className="block text-gray-400 text-theme-xs dark:text-gray-500">
-      {user.phone}
-    </span>
-  )}
-</div>
-                            <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
-                              {user.email}
-                            </span>
-                            {user.phone && (
-                              <span className="block text-gray-400 text-theme-xs dark:text-gray-500">
-                                {user.phone}
+                            <div>
+                              <Link 
+                                href={`/users/${user.id}`}
+                                className="block font-medium text-gray-800 text-theme-sm dark:text-white/90 hover:text-brand-600 dark:hover:text-brand-400"
+                              >
+                                {user.user_metadata?.name || user.email}
+                              </Link>
+                              <span className="block text-gray-500 text-theme-xs dark:text-gray-400">
+                                {user.email}
                               </span>
-                            )}
+                              {user.phone && (
+                                <span className="block text-gray-400 text-theme-xs dark:text-gray-500">
+                                  {user.phone}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -922,103 +1068,6 @@ export default function UsersList() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Enhanced UserAvatar component with better image debugging
-function UserAvatar({ user }: { user: AuthUser }) {
-  const [imageError, setImageError] = useState(false);
-  
-  const getUserImage = (user: AuthUser): string | null => {
-    console.log('🖼️ Debug user image data:', {
-      id: user.id,
-      directImage: user.image,
-      userMetadataImage: user.user_metadata?.image,
-      userMetadataAvatar: user.user_metadata?.avatar_url,
-      userMetadata: user.user_metadata
-    });
-
-    // Priority: 1. Direct image field, 2. user_metadata.image, 3. user_metadata.avatar_url
-    let imagePath = user.image || user.user_metadata?.image || user.user_metadata?.avatar_url;
-    
-    if (!imagePath) {
-      console.log('❌ No image found for user');
-      return null;
-    }
-
-    // Handle different types of image paths
-    if (imagePath.startsWith('http')) {
-      console.log('✅ Using external URL:', imagePath);
-      return imagePath;
-    }
-    
-    // Handle local file paths - remove any "public/" prefix if present
-    if (imagePath.startsWith('public/')) {
-      imagePath = imagePath.replace('public/', '');
-    }
-    
-    // Handle local images in the public folder
-    if (imagePath.startsWith('/')) {
-      console.log('✅ Using absolute local path:', imagePath);
-      return imagePath;
-    } else {
-      // Assume it's a relative path in the public/images/users folder
-      console.log('✅ Using relative local path:', `/images/users/${imagePath}`);
-      return `/images/users/${imagePath}`;
-    }
-  };
-
-  const getUserInitials = (user: AuthUser) => {
-    const name = user.user_metadata?.name || user.email;
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
-  };
-
-  const getRoleColorForAvatar = (role: string) => {
-    const colorMap: Record<string, string> = {
-      President: "bg-purple-500",
-      "Deputy President": "bg-blue-500", 
-      "Prime Cabinet Secretary": "bg-indigo-500",
-      "Cabinet Secretary": "bg-green-500",
-      "Principal Secretary": "bg-teal-500",
-      "Cabinet Secretariat": "bg-orange-500",
-      Director: "bg-cyan-500",
-      "Assistant Director": "bg-cyan-400",
-      Admin: "bg-gray-500",
-      "Attorney General": "bg-red-500",
-      "Secretary to the Cabinet": "bg-amber-500"
-    };
-    return colorMap[role] || "bg-brand-500";
-  };
-
-  const imageUrl = getUserImage(user);
-
-  // If no image URL or image failed to load, show initials
-  if (!imageUrl || imageError) {
-    return (
-      <div className={`flex h-10 w-10 items-center justify-center rounded-full ${getRoleColorForAvatar(user.role)}`}>
-        <span className="text-sm font-medium text-white">
-          {getUserInitials(user)}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-10 w-10 overflow-hidden rounded-full">
-      <Image
-        width={40}
-        height={40}
-        src={imageUrl}
-        alt={`${user.user_metadata?.name || user.email}'s profile picture`}
-        className="h-full w-full object-cover"
-        onError={(e) => {
-          console.error('❌ Image failed to load:', imageUrl);
-          setImageError(true);
-        }}
-        onLoad={() => console.log('✅ Image loaded successfully:', imageUrl)}
-        unoptimized={imageUrl.startsWith('/images/')} // Disable optimization for local images if needed
-      />
     </div>
   );
 }
