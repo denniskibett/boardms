@@ -1,6 +1,6 @@
-// app/api/categories/route.ts
+// src/app/api/categories/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/db';
+import { supabaseServer } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
 
     console.log('🔍 Fetching categories with type:', type);
 
-    // Use the actual Supabase client directly
     const supabase = supabaseServer();
     
     let query = supabase

@@ -1,13 +1,17 @@
-import { NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+// src/app/api/ministries/route.ts - UPDATED
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/server';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const cabinetSecretary = searchParams.get('cabinet_secretary');
     
-    let sql = `
-      SELECT 
+    const supabase = supabaseServer();
+    
+    let query = supabase
+      .from('ministries')
+      .select(`
         id,
         name,
         acronym,
@@ -20,22 +24,25 @@ export async function GET(request: Request) {
         status,
         created_at,
         updated_at
-      FROM ministries 
-      WHERE status = 'active'
-    `;
-    
-    const params = [];
-    
+      `)
+      .eq('status', 'active')
+      .order('name', { ascending: true });
+
     if (cabinetSecretary) {
-      sql += ` AND cabinet_secretary = $1`;
-      params.push(parseInt(cabinetSecretary));
+      query = query.eq('cabinet_secretary', parseInt(cabinetSecretary));
     }
-    
-    sql += ` ORDER BY name`;
-    
-    const result = await query(sql, params);
-    
-    return NextResponse.json(result.rows);
+
+    const { data: ministries, error } = await query;
+
+    if (error) {
+      console.error('Supabase error fetching ministries:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch ministries' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(ministries || []);
   } catch (error) {
     console.error('Error fetching ministries:', error);
     return NextResponse.json(

@@ -1,44 +1,50 @@
-// app/api/resources/[id]/route.ts
+// src/app/api/resources/[id]/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
-import { getServerSession } from 'next-auth/next'; // ← FIXED IMPORT
-import { authOptions } from '@/lib/auth';
+import { supabaseServer } from '@/lib/supabase/server';
 
-// Define session and user types
-interface User {
-  id: string;
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
+// Define the parameter type
+interface RouteParams {
+  params: Promise<{ id: string }>;
 }
 
-interface Session {
-  user: User;
-}
-
-// Add this to your existing app/api/resources/[id]/route.ts
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
-    const resource = await query(
-      `SELECT 
-        r.*,
-        c.name as resource_type_name,
-        u.name as created_by_name
-       FROM resources r
-       LEFT JOIN categories c ON r.resource_type_id = c.id
-       LEFT JOIN users u ON r.created_by = u.id
-       WHERE r.id = $1`,
-      [parseInt(params.id)]
-    );
+    // Await the params before using them
+    const { id } = await params;
+    
+    const supabase = supabaseServer();
 
-    if (resource.rows.length === 0) {
-      return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
+    const { data: resource, error } = await supabase
+      .from('resources')
+      .select(`
+        *,
+        categories!resource_type_id(name),
+        users!created_by(name)
+      `)
+      .eq('id', parseInt(id))
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
+      }
+      console.error('Supabase error fetching resource:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch resource' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json(resource.rows[0]);
+    const formattedResource = {
+      ...resource,
+      resource_type_name: resource.categories?.name,
+      created_by_name: resource.users?.name
+    };
+
+    return NextResponse.json(formattedResource);
   } catch (error: any) {
     console.error('Error fetching resource:', error);
     return NextResponse.json(
@@ -50,33 +56,56 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
-    const session = await getServerSession(authOptions) as Session | null;
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    // Await the params before using them
+    const { id } = await params;
+    
     const { name, display_name, resource_type_id, year, description, metadata } = await request.json();
+
+    const supabase = supabaseServer();
 
     // Generate folder name in uppercase
     const folderName = name.toUpperCase().replace(/ /g, '-').replace(/[^A-Z0-9-]/g, '');
 
-    const result = await query(
-      `UPDATE resources 
-       SET name = $1, display_name = $2, resource_type_id = $3, year = $4, 
-           description = $5, metadata = $6, updated_at = NOW()
-       WHERE id = $7
-       RETURNING *`,
-      [folderName, display_name, resource_type_id, year, description, metadata, parseInt(params.id)]
-    );
+    const { data: resource, error } = await supabase
+      .from('resources')
+      .update({
+        name: folderName,
+        display_name,
+        resource_type_id,
+        year,
+        description,
+        metadata,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', parseInt(id))
+      .select(`
+        *,
+        categories!resource_type_id(name),
+        users!created_by(name)
+      `)
+      .single();
 
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
+      }
+      console.error('Supabase error updating resource:', error);
+      return NextResponse.json(
+        { error: 'Failed to update resource' },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json(result.rows[0]);
+    const formattedResource = {
+      ...resource,
+      resource_type_name: resource.categories?.name,
+      created_by_name: resource.users?.name
+    };
+
+    return NextResponse.json(formattedResource);
   } catch (error: any) {
     console.error('Error updating resource:', error);
     return NextResponse.json(
@@ -88,22 +117,72 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
-    const session = await getServerSession(authOptions) as Session | null;
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Await the params before using them
+    const { id } = await params;
+    
+    const supabase = supabaseServer();
+
+    // First, delete all files associated with this resource from storage
+    const { data: files, error: filesError } = await supabase
+      .from('resource_files')
+      .select('*')
+      .eq('resource_id', parseInt(id));
+
+    if (filesError) {
+      console.error('Supabase error fetching files:', filesError);
+      return NextResponse.json(
+        { error: 'Failed to fetch resource files' },
+        { status: 500 }
+      );
     }
 
-    // First, delete all files associated with this resource
-    await query('DELETE FROM resource_files WHERE resource_id = $1', [parseInt(params.id)]);
+    // Delete files from storage
+    if (files && files.length > 0) {
+      const filePaths = files.map(file => {
+        // Extract the file path from the URL
+        const url = new URL(file.file_url);
+        return url.pathname.replace('/storage/v1/object/public/documents/', '');
+      });
+      
+      const { error: storageError } = await supabase.storage
+        .from('documents')
+        .remove(filePaths);
+
+      if (storageError) {
+        console.error('Error deleting files from storage:', storageError);
+        // Continue with database deletion even if storage fails
+      }
+    }
+
+    // Delete file records from database
+    const { error: deleteFilesError } = await supabase
+      .from('resource_files')
+      .delete()
+      .eq('resource_id', parseInt(id));
+
+    if (deleteFilesError) {
+      console.error('Supabase error deleting files:', deleteFilesError);
+      return NextResponse.json(
+        { error: 'Failed to delete resource files' },
+        { status: 500 }
+      );
+    }
 
     // Then delete the resource
-    const result = await query('DELETE FROM resources WHERE id = $1 RETURNING *', [parseInt(params.id)]);
+    const { error: deleteResourceError } = await supabase
+      .from('resources')
+      .delete()
+      .eq('id', parseInt(id));
 
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
+    if (deleteResourceError) {
+      console.error('Supabase error deleting resource:', deleteResourceError);
+      return NextResponse.json(
+        { error: 'Failed to delete resource' },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true });

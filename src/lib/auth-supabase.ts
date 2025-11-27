@@ -1,79 +1,50 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { cache } from 'react';
+// src/lib/auth-supabase.ts - UPDATED for API routes
+import { supabaseServer } from '@/lib/supabase/server';
 
-// Get current user with profile data
-export const getCurrentUser = cache(async () => {
-  const supabase = createClient();
-  
-  const { data: { user }, error } = await supabase.auth.getUser();
+// For API routes using service role key
+export const getApiUser = async (request: Request) => {
+  try {
+    // Get authorization header
+    const authHeader = request.headers.get('Authorization');
+    
+    if (!authHeader?.startsWith('Bearer ')) {
+      return null;
+    }
 
-  if (error || !user) {
+    const token = authHeader.replace('Bearer ', '');
+    
+    // Verify the token using Supabase
+    const supabase = supabaseServer();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return null;
+    }
+
+    // Get user profile
+    const { data: profile } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    return {
+      ...user,
+      profile: profile || null
+    };
+  } catch (error) {
+    console.error('Error getting API user:', error);
     return null;
   }
-
-  // Get user profile from your users table
-  const { data: profile } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', user.email)
-    .single();
-
-  return {
-    ...user,
-    profile: profile || null
-  };
-});
-
-// Get session with user data
-export const getSession = cache(async () => {
-  const supabase = createClient();
-  
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error || !session) {
-    return null;
-  }
-
-  return session;
-});
-
-// Require authentication - redirect if not logged in
-export const requireAuth = cache(async () => {
-  const user = await getCurrentUser();
-  
-  if (!user) {
-    redirect('/auth/signin');
-  }
-
-  return user;
-});
-
-// Require specific role
-export const requireRole = cache(async (allowedRoles: string[]) => {
-  const user = await requireAuth();
-  
-  if (!allowedRoles.includes(user.profile?.role || '')) {
-    redirect('/unauthorized');
-  }
-
-  return user;
-});
-
-// Check if user has role
-export const hasRole = async (allowedRoles: string[]) => {
-  const user = await getCurrentUser();
-  return user ? allowedRoles.includes(user.profile?.role || '') : false;
 };
 
-// Sign out
-export async function signOut() {
-  const supabase = createClient();
-  const { error } = await supabase.auth.signOut();
+// Alternative: If you want to use the service role key directly without token verification
+export const requireApiAuth = async (request: Request) => {
+  const user = await getApiUser(request);
   
-  if (error) {
-    console.error('Sign out error:', error);
+  if (!user) {
+    throw new Error('Unauthorized');
   }
-  
-  redirect('/auth/signin');
-}
+
+  return user;
+};
