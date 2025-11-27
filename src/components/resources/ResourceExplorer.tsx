@@ -1,7 +1,7 @@
-// components/resources/ResourceExplorer.tsx - FIXED
+// src/components/resources/ResourceExplorer.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Folder, 
   File, 
@@ -11,7 +11,8 @@ import {
   Eye, 
   Upload,
   Plus,
-  Search
+  Search,
+  Loader2
 } from 'lucide-react';
 import { useResources } from '@/hooks/useResources';
 import UploadFileModal from './UploadFileModal';
@@ -38,86 +39,88 @@ interface ResourceExplorerProps {
 }
 
 export default function ResourceExplorer({ onUploadFile, onCreateResource }: ResourceExplorerProps) {
-  const { resources, fetchResourceFiles } = useResources();
+  const { 
+    resources, 
+    categories, 
+    files, 
+    loading, 
+    fetchResourceFiles, 
+    fetchCategories,
+    uploadFile 
+  } = useResources();
+  
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-  const [folderStructure, setFolderStructure] = useState<FolderStructure>([]);
-  const [fileContents, setFileContents] = useState<{[key: string]: any[]}>({});
   const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedResource, setSelectedResource] = useState<number | null>(null);
 
-  // Build folder structure from resources
-  useEffect(() => {
-    const buildStructure = () => {
-      const structure: FolderStructure = [];
+  // Build optimized folder structure with useMemo
+  const folderStructure = useMemo(() => {
+    const structure: FolderStructure = [];
+    const resourcesByType: { [key: string]: any[] } = {};
 
-      // Group by resource type
-      const resourcesByType: { [key: string]: any[] } = {};
+    // Group resources by type
+    resources.forEach(resource => {
+      const resourceType = resource.resource_type_name || 'UNCATEGORIZED';
+      if (!resourcesByType[resourceType]) {
+        resourcesByType[resourceType] = [];
+      }
+      resourcesByType[resourceType].push(resource);
+    });
+
+    // Create resource type folders
+    Object.entries(resourcesByType).forEach(([resourceType, typeResources]) => {
+      const typeFolder: FolderItem = {
+        type: 'folder',
+        name: resourceType,
+        path: resourceType,
+        items: []
+      };
+
+      // Group by year within this resource type
+      const resourcesByYear: { [key: string]: any[] } = {};
       
-      resources.forEach(resource => {
-        const resourceType = resource.resource_type_name || 'UNCATEGORIZED';
-        if (!resourcesByType[resourceType]) {
-          resourcesByType[resourceType] = [];
+      typeResources.forEach(resource => {
+        const year = resource.year.toString();
+        if (!resourcesByYear[year]) {
+          resourcesByYear[year] = [];
         }
-        resourcesByType[resourceType].push(resource);
+        resourcesByYear[year].push(resource);
       });
 
-      // Create resource type folders
-      Object.entries(resourcesByType).forEach(([resourceType, typeResources]) => {
-        const typeFolder: FolderItem = {
+      // Create year folders
+      Object.entries(resourcesByYear).forEach(([year, yearResources]) => {
+        const yearFolder: FolderItem = {
           type: 'folder',
-          name: resourceType,
-          path: resourceType,
+          name: year,
+          path: `${resourceType}/${year}`,
           items: []
         };
 
-        // Group by year within this resource type
-        const resourcesByYear: { [key: string]: any[] } = {};
-        
-        typeResources.forEach(resource => {
-          const year = resource.year.toString();
-          if (!resourcesByYear[year]) {
-            resourcesByYear[year] = [];
-          }
-          resourcesByYear[year].push(resource);
-        });
-
-        // Create year folders
-        Object.entries(resourcesByYear).forEach(([year, yearResources]) => {
-          const yearFolder: FolderItem = {
+        // Create resource folders
+        yearResources.forEach(resource => {
+          const resourceFolder: FolderItem = {
             type: 'folder',
-            name: year,
-            path: `${resourceType}/${year}`,
-            items: []
+            name: resource.name,
+            path: `${resourceType}/${year}/${resource.name}`,
+            items: [],
+            resource: resource
           };
-
-          // Create resource folders
-          yearResources.forEach(resource => {
-            const resourceFolder: FolderItem = {
-              type: 'folder',
-              name: resource.name,
-              path: `${resourceType}/${year}/${resource.name}`,
-              items: [],
-              resource: resource
-            };
-            yearFolder.items.push(resourceFolder);
-          });
-
-          typeFolder.items.push(yearFolder);
+          yearFolder.items.push(resourceFolder);
         });
 
-        structure.push(typeFolder);
+        typeFolder.items.push(yearFolder);
       });
 
-      setFolderStructure(structure);
-    };
+      structure.push(typeFolder);
+    });
 
-    buildStructure();
+    return structure;
   }, [resources]);
 
-  const toggleFolder = async (path: string) => {
-    
+  // Optimized toggle folder function
+  const toggleFolder = useCallback(async (path: string) => {
     const newExpanded = new Set(expandedFolders);
     
     if (newExpanded.has(path)) {
@@ -127,7 +130,7 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
       
       // If this is a resource folder, load its files
       const pathParts = path.split('/');
-      if (pathParts.length === 3) { // resource_type/year/resource_name
+      if (pathParts.length === 3) {
         const [resourceType, year, resourceName] = pathParts;
         
         // Find the resource
@@ -137,14 +140,10 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
           r.name === resourceName
         );
 
-        if (resource && !fileContents[path]) {
+        if (resource && !files[resource.id]) {
           setLoadingFiles(prev => new Set(prev).add(path));
           try {
-            const files = await fetchResourceFiles(resource.id);
-            setFileContents(prev => ({
-              ...prev,
-              [path]: files
-            }));
+            await fetchResourceFiles(resource.id);
           } catch (error) {
             console.error('Error loading files:', error);
           } finally {
@@ -159,24 +158,19 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
     }
     
     setExpandedFolders(newExpanded);
-  };
+  }, [expandedFolders, resources, files, fetchResourceFiles]);
 
-  const findFolderByPath = (items: FolderStructure, targetPath: string): FolderItem | null => {
-    for (const item of items) {
-      if (item.type === 'folder') {
-        if (item.path === targetPath) {
-          return item;
-        }
-        const found = findFolderByPath(item.items, targetPath);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
+  // Load categories on mount
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]);
 
   const handleDownload = async (file: any) => {
     try {
+      // For Supabase storage, we can use the public URL directly
       const response = await fetch(file.file_url);
+      if (!response.ok) throw new Error('Download failed');
+      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -205,79 +199,45 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
   };
 
   const getFileIcon = (fileType: string) => {
-    switch (fileType) {
-      case 'pdf': return '📄';
-      case 'word': return '📝';
-      case 'excel': return '📊';
-      case 'powerpoint': return '📑';
-      case 'image': return '🖼️';
-      case 'archive': return '📦';
-      default: return '📎';
-    }
+    const type = fileType?.toLowerCase() || '';
+    if (type.includes('pdf')) return '📄';
+    if (type.includes('word') || type.includes('document')) return '📝';
+    if (type.includes('excel') || type.includes('spreadsheet')) return '📊';
+    if (type.includes('powerpoint') || type.includes('presentation')) return '📑';
+    if (type.includes('image')) return '🖼️';
+    if (type.includes('zip') || type.includes('archive')) return '📦';
+    return '📎';
   };
 
+  // Recursive function to render folder structure
   const renderFolderItem = (item: FolderItem | FileItem, level: number = 0) => {
     if (item.type === 'file') {
       return (
-        <div
+        <FileItem 
           key={`file-${item.file.id}`}
-          className="flex items-center gap-3 py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-700"
-          style={{ marginLeft: `${level * 16}px` }}
-        >
-          <span className="text-lg flex-shrink-0">
-            {getFileIcon(item.file.file_type)}
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900 dark:text-white truncate">
-                {item.file.display_name}
-              </span>
-              {item.file.ministry_name && (
-                <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300 px-2 py-1 rounded-full flex-shrink-0">
-                  {item.file.ministry_name}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              <span>{item.file.name}</span>
-              <span className="mx-2">•</span>
-              <span>{formatFileSize(item.file.file_size)}</span>
-              <span className="mx-2">•</span>
-              <span>{new Date(item.file.uploaded_at).toLocaleDateString()}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => handleViewFile(item.file)}
-              className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              title="View file"
-            >
-              <Eye className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleDownload(item.file)}
-              className="p-1 text-gray-400 hover:text-green-600 dark:hover:text-green-400 transition-colors"
-              title="Download file"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+          file={item.file}
+          level={level}
+          onView={handleViewFile}
+          onDownload={handleDownload}
+          getFileIcon={getFileIcon}
+          formatFileSize={formatFileSize}
+        />
       );
     }
 
     // It's a folder
     const folder = item as FolderItem;
     const isExpanded = expandedFolders.has(folder.path);
-    const isResourceFolder = folder.path.split('/').length === 3; // resource_type/year/resource_name
+    const isResourceFolder = folder.path.split('/').length === 3;
     const isLoading = loadingFiles.has(folder.path);
+    const resourceFiles = folder.resource ? files[folder.resource.id] : [];
 
     return (
       <div key={folder.path} className="select-none">
         {/* Folder Header */}
         <div 
           className={`flex items-center gap-2 py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
-            level > 0 ? `ml-${level * 4}` : ''
+            level > 0 ? 'border-l-2 border-gray-200 dark:border-gray-600' : ''
           }`}
           onClick={() => toggleFolder(folder.path)}
           style={{ marginLeft: `${level * 16}px` }}
@@ -288,7 +248,11 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
             ) : (
               <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
             )}
-            <Folder className="w-4 h-4 text-blue-500 flex-shrink-0" />
+            <Folder className={`w-4 h-4 flex-shrink-0 ${
+              level === 0 ? 'text-blue-500' : 
+              level === 1 ? 'text-green-500' : 
+              'text-orange-500'
+            }`} />
             <span className="font-medium text-gray-900 dark:text-white truncate">
               {folder.name}
             </span>
@@ -321,20 +285,22 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
         {isExpanded && (
           <div>
             {/* Sub-folders */}
-            {folder.items.map(item =>
-              renderFolderItem(item, level + 1)
+            {folder.items.map(subItem =>
+              renderFolderItem(subItem, level + 1)
             )}
 
             {/* Files in resource folder */}
-            {isResourceFolder && fileContents[folder.path] && (
+            {isResourceFolder && resourceFiles && resourceFiles.length > 0 && (
               <div>
-                {fileContents[folder.path].map((file) => (
+                {resourceFiles.map((file: any) => (
                   <FileItem 
                     key={file.id} 
                     file={file} 
                     level={level + 1}
                     onView={handleViewFile}
                     onDownload={handleDownload}
+                    getFileIcon={getFileIcon}
+                    formatFileSize={formatFileSize}
                   />
                 ))}
               </div>
@@ -346,13 +312,13 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
                 className="flex items-center gap-2 py-2 px-3 text-gray-500 dark:text-gray-400"
                 style={{ marginLeft: `${(level + 1) * 16}px` }}
               >
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
                 <span className="text-sm">Loading files...</span>
               </div>
             )}
 
             {/* Empty state for resource folder */}
-            {isResourceFolder && !fileContents[folder.path] && !isLoading && (
+            {isResourceFolder && (!resourceFiles || resourceFiles.length === 0) && !isLoading && (
               <div 
                 className="text-center py-4 text-gray-500 dark:text-gray-400"
                 style={{ marginLeft: `${(level + 1) * 16}px` }}
@@ -376,10 +342,17 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
     );
   };
 
-  // Separate component for file items
-  const FileItem = ({ file, level, onView, onDownload }: any) => (
+  // File Item Component for better performance
+  const FileItem = React.memo(({ 
+    file, 
+    level, 
+    onView, 
+    onDownload, 
+    getFileIcon, 
+    formatFileSize 
+  }: any) => (
     <div
-      className="flex items-center gap-3 py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+      className="flex items-center gap-3 py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-700 group"
       style={{ marginLeft: `${level * 16}px` }}
     >
       <span className="text-lg flex-shrink-0">
@@ -397,14 +370,14 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
           )}
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          <span>{file.name}</span>
+          <span className="truncate">{file.name}</span>
           <span className="mx-2">•</span>
           <span>{formatFileSize(file.file_size)}</span>
           <span className="mx-2">•</span>
           <span>{new Date(file.uploaded_at).toLocaleDateString()}</span>
         </div>
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={() => onView(file)}
           className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
@@ -421,7 +394,68 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
         </button>
       </div>
     </div>
-  );
+  ));
+
+  FileItem.displayName = 'FileItem';
+
+  // Filter folder structure based on search term
+  const filteredFolderStructure = useMemo(() => {
+    if (!searchTerm.trim()) return folderStructure;
+
+    const filterItems = (items: FolderStructure): FolderStructure => {
+      return items.filter(item => {
+        if (item.type === 'file') {
+          return item.file.display_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                 item.file.name.toLowerCase().includes(searchTerm.toLowerCase());
+        }
+
+        // For folders, check if folder name matches or any child matches
+        const folder = item as FolderItem;
+        const nameMatches = folder.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const childrenMatch = filterItems(folder.items).length > 0;
+        
+        return nameMatches || childrenMatch;
+      }).map(item => {
+        if (item.type === 'folder') {
+          return {
+            ...item,
+            items: filterItems(item.items)
+          };
+        }
+        return item;
+      });
+    };
+
+    return filterItems(folderStructure);
+  }, [folderStructure, searchTerm]);
+
+  const handleUploadSuccess = useCallback(() => {
+    setShowUploadModal(false);
+    setSelectedResource(null);
+    
+    // Refresh the file contents for the current folder
+    if (selectedResource) {
+      fetchResourceFiles(selectedResource);
+      
+      // Re-trigger the folder expansion to reload files
+      const currentPath = Object.values(folderStructure).flatMap((typeFolder: any) =>
+        typeFolder.items.flatMap((yearFolder: any) =>
+          yearFolder.items
+            .filter((resourceFolder: any) => resourceFolder.resource?.id === selectedResource)
+            .map((resourceFolder: any) => resourceFolder.path)
+        )
+      )[0];
+      
+      if (currentPath) {
+        setExpandedFolders(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(currentPath);
+          return newSet;
+        });
+        setTimeout(() => toggleFolder(currentPath), 100);
+      }
+    }
+  }, [selectedResource, folderStructure, fetchResourceFiles, toggleFolder]);
 
   return (
     <div className="space-y-4">
@@ -471,25 +505,33 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
         </div>
 
         <div className="max-h-96 overflow-y-auto">
-          {folderStructure.length === 0 ? (
+          {loading && resources.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            </div>
+          ) : filteredFolderStructure.length === 0 ? (
             <div className="text-center py-12">
               <Folder className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                No resources found
+                {searchTerm ? 'No matching results' : 'No resources found'}
               </h3>
               <p className="text-gray-500 dark:text-gray-400 mb-4">
-                Get started by creating your first resource
+                {searchTerm ? 'Try adjusting your search terms' : 'Get started by creating your first resource'}
               </p>
-              <button
-                onClick={onCreateResource}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Create Resource
-              </button>
+              {!searchTerm && (
+                <button
+                  onClick={onCreateResource}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Resource
+                </button>
+              )}
             </div>
           ) : (
-            folderStructure.map(item => renderFolderItem(item))
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredFolderStructure.map(item => renderFolderItem(item))}
+            </div>
           )}
         </div>
       </div>
@@ -502,29 +544,7 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
             setShowUploadModal(false);
             setSelectedResource(null);
           }}
-          onSuccess={() => {
-            setShowUploadModal(false);
-            setSelectedResource(null);
-            // Refresh the file contents for the current folder
-            const currentPath = Object.values(folderStructure).flatMap((typeFolder: any) =>
-              typeFolder.items.flatMap((yearFolder: any) =>
-                yearFolder.items
-                  .filter((resourceFolder: any) => resourceFolder.resource?.id === selectedResource)
-                  .map((resourceFolder: any) => resourceFolder.path)
-              )
-            )[0];
-            
-            if (currentPath) {
-              setFileContents(prev => ({ ...prev, [currentPath]: undefined }));
-              // Re-trigger the folder expansion to reload files
-              setExpandedFolders(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(currentPath);
-                return newSet;
-              });
-              setTimeout(() => toggleFolder(currentPath), 100);
-            }
-          }}
+          onSuccess={handleUploadSuccess}
         />
       )}
     </div>

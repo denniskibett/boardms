@@ -7,6 +7,7 @@ import systemSettingsSlice from './slices/systemSettingsSlice';
 import dashboardSlice from './slices/dashboardSlice';
 import mdasSlice from './slices/mdaSlice'; 
 import meetingsSlice from './slices/meetingsSlice';
+import resourcesSlice from './slices/resourcesSlice'; 
 
 export const makeStore = () => {
   return configureStore({
@@ -18,6 +19,7 @@ export const makeStore = () => {
       dashboard: dashboardSlice,
       mdas: mdasSlice,
       meetings: meetingsSlice,
+      resources: resourcesSlice,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
