@@ -1,10 +1,14 @@
-// app/api/auth/users/[id]/route.ts
+// src/app/api/auth/users/[id]/route.ts - UPDATED
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: RouteParams
 ) {
   try {
     const { id } = await params;
@@ -12,7 +16,7 @@ export async function GET(
 
     console.log('🔍 Fetching auth user:', id);
 
-    // Get user from Supabase Auth
+    // Get user from Supabase Auth using admin API
     const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(id);
 
     if (authError || !authUser) {
@@ -25,7 +29,20 @@ export async function GET(
 
     console.log('✅ Auth user found:', authUser.user.email);
 
-    // Transform auth user to match our User interface
+    // Also check if user exists in our users table
+    const { data: dbUser, error: dbError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    // If user exists in our table, use that data
+    if (dbUser && !dbError) {
+      console.log('✅ User found in database table');
+      return NextResponse.json(dbUser);
+    }
+
+    // Otherwise, transform auth user to match our User interface
     const userData = {
       id: authUser.user.id,
       auth_id: authUser.user.id,

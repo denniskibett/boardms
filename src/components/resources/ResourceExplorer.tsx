@@ -165,9 +165,11 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
     fetchCategories();
   }, [fetchCategories]);
 
+  // In ResourceExplorer.tsx - UPDATE THE FILE HANDLING FUNCTIONS
   const handleDownload = async (file: any) => {
     try {
       // For Supabase storage, we can use the public URL directly
+      // But we need to make sure the file is publicly accessible
       const response = await fetch(file.file_url);
       if (!response.ok) throw new Error('Download failed');
       
@@ -187,8 +189,10 @@ export default function ResourceExplorer({ onUploadFile, onCreateResource }: Res
   };
 
   const handleViewFile = (file: any) => {
+    // For Supabase storage, open the public URL directly
     window.open(file.file_url, '_blank');
   };
+
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';

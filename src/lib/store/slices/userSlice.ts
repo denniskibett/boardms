@@ -1,77 +1,138 @@
-// lib/store/slices/userSlice.ts
+// src/lib/store/slices/userSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { supabase } from '@/lib/supabase/client';
 
-interface User {
+export interface User {
   id: string;
-  name: string;
+  auth_id: string;
   email: string;
-  image?: string;
+  name: string;
   role: string;
   status: string;
+  image?: string;
   phone?: string;
   last_login?: string;
-  ministry_id?: number;
-  committees?: string[];
   created_at: string;
   updated_at: string;
-  auth_id?: string; // Add auth_id to track the auth user
 }
 
 interface UserState {
   currentUser: User | null;
-  users: User[];
   loading: boolean;
   error: string | null;
+  isAuthenticated: boolean;
 }
 
 const initialState: UserState = {
   currentUser: null,
-  users: [],
   loading: false,
   error: null,
+  isAuthenticated: false,
 };
 
-// Async thunks
 export const fetchUserProfile = createAsyncThunk(
-  'user/fetchProfile',
-  async (userId: string) => {
-    const response = await fetch(`/api/users/${userId}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch user');
+  'user/fetchUserProfile',
+  async (authUserId: string, { rejectWithValue }) => {
+    try {
+      console.log('🔄 Fetching user profile for:', authUserId);
+
+      // Method 1: Try to get user from our custom users table via Supabase
+      const { data: dbUser, error: dbError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUserId)
+        .single();
+
+      if (!dbError && dbUser) {
+        console.log('✅ User found in database:', dbUser.email);
+        return dbUser;
+      }
+
+      console.log('🔍 User not found in database table, trying auth API...');
+
+      // Method 2: Try to get user via our custom API route
+      try {
+        const authUserResponse = await fetch(`/api/auth/user?id=${authUserId}`);
+        
+        if (!authUserResponse.ok) {
+          throw new Error(`API returned ${authUserResponse.status}`);
+        }
+        
+        const authUser = await authUserResponse.json();
+        console.log('✅ Found user via auth API:', authUser.email);
+        return authUser;
+      } catch (apiError) {
+        console.error('❌ API call failed:', apiError);
+        
+        // Method 3: Fallback - Get basic info from Supabase auth directly
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user) {
+          throw new Error('Could not fetch user from any source');
+        }
+
+        // Create a basic user object from auth data
+        const fallbackUser: User = {
+          id: user.id,
+          auth_id: user.id,
+          email: user.email || '',
+          name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+          role: user.user_metadata?.role || 'user',
+          status: 'active',
+          image: user.user_metadata?.avatar_url || user.user_metadata?.picture,
+          phone: user.user_metadata?.phone,
+          last_login: user.last_sign_in_at,
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+        };
+
+        console.log('✅ Using fallback user data:', fallbackUser.email);
+        return fallbackUser;
+      }
+
+    } catch (error: any) {
+      console.error('❌ Error in fetchUserProfile:', error);
+      return rejectWithValue(error.message);
     }
-    return response.json();
   }
 );
 
-export const syncUserData = createAsyncThunk(
-  'user/syncData',
-  async (authUserId: string) => {
-    console.log('🔄 Syncing user data for auth ID:', authUserId);
-    
+export const initializeUser = createAsyncThunk(
+  'user/initializeUser',
+  async (_, { dispatch }) => {
     try {
-      // First, try to get user by auth_id from custom table
-      const customUserResponse = await fetch(`/api/users/auth/${authUserId}`);
+      console.log('🔄 Initializing user...');
       
-      if (customUserResponse.ok) {
-        const customUser = await customUserResponse.json();
-        console.log('✅ Found user in custom table:', customUser);
-        return customUser;
+      // Get current session from Supabase
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error || !session) {
+        console.log('❌ No active session found');
+        return null;
       }
+
+      console.log('✅ Session found, fetching user profile...');
       
-      // If not found in custom table, try to get from auth table via API
-      const authUserResponse = await fetch(`/api/auth/users/${authUserId}`);
-      if (authUserResponse.ok) {
-        const authUser = await authUserResponse.json();
-        console.log('✅ Found user in auth table:', authUser);
-        return authUser;
+      // Fetch user profile using the user ID from session
+      const result = await dispatch(fetchUserProfile(session.user.id));
+      
+      if (fetchUserProfile.fulfilled.match(result)) {
+        return result.payload;
+      } else {
+        throw new Error(result.payload as string);
       }
-      
-      throw new Error('User not found in custom or auth tables');
-      
     } catch (error) {
-      console.error('❌ Error syncing user data:', error);
+      console.error('❌ Error initializing user:', error);
       throw error;
     }
+  }
+);
+
+export const signOutUser = createAsyncThunk(
+  'user/signOut',
+  async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   }
 );
 
@@ -79,22 +140,39 @@ const userSlice = createSlice({
   name: 'user',
   initialState,
   reducers: {
-    setCurrentUser: (state, action: PayloadAction<User>) => {
-      state.currentUser = action.payload;
-    },
-    updateUserImage: (state, action: PayloadAction<string>) => {
-      if (state.currentUser) {
-        state.currentUser.image = action.payload;
-      }
-    },
     clearError: (state) => {
       state.error = null;
     },
-    resetUserState: () => initialState,
+    setUser: (state, action: PayloadAction<User>) => {
+      state.currentUser = action.payload;
+      state.isAuthenticated = true;
+    },
+    clearUser: (state) => {
+      state.currentUser = null;
+      state.isAuthenticated = false;
+      state.loading = false;
+      state.error = null;
+    },
   },
   extraReducers: (builder) => {
     builder
-      // Fetch user profile
+      // Initialize User
+      .addCase(initializeUser.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(initializeUser.fulfilled, (state, action) => {
+        state.loading = false;
+        state.currentUser = action.payload;
+        state.isAuthenticated = !!action.payload;
+      })
+      .addCase(initializeUser.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload as string;
+        state.isAuthenticated = false;
+        state.currentUser = null;
+      })
+      // Fetch User Profile
       .addCase(fetchUserProfile.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -102,28 +180,25 @@ const userSlice = createSlice({
       .addCase(fetchUserProfile.fulfilled, (state, action) => {
         state.loading = false;
         state.currentUser = action.payload;
+        state.isAuthenticated = true;
       })
       .addCase(fetchUserProfile.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message || 'Failed to fetch user';
+        state.error = action.payload as string;
+        state.isAuthenticated = false;
       })
-      // Sync user data
-      .addCase(syncUserData.pending, (state) => {
-        state.loading = true;
+      // Sign Out
+      .addCase(signOutUser.fulfilled, (state) => {
+        state.currentUser = null;
+        state.isAuthenticated = false;
+        state.loading = false;
         state.error = null;
       })
-      .addCase(syncUserData.fulfilled, (state, action) => {
-        state.loading = false;
-        state.currentUser = action.payload;
-        console.log('✅ User data synced successfully');
-      })
-      .addCase(syncUserData.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message || 'Failed to sync user data';
-        console.error('❌ User data sync failed:', action.error);
+      .addCase(signOutUser.rejected, (state, action) => {
+        state.error = action.error.message || 'Failed to sign out';
       });
   },
 });
 
-export const { setCurrentUser, updateUserImage, clearError, resetUserState } = userSlice.actions;
+export const { clearError, setUser, clearUser } = userSlice.actions;
 export default userSlice.reducer;

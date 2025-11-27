@@ -32,7 +32,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${outfit.className} antialiased`}>
         <Providers>
-          <SyncUserData />
           {children}
         </Providers>
       </body>

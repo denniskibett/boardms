@@ -1,3 +1,4 @@
+// src/lib/supabase/server.ts - FIXED
 import { createClient } from '@supabase/supabase-js';
 
 // Simple server client without cookies for API routes
@@ -19,7 +20,7 @@ export async function createServerClient() {
   const { createServerClient } = await import('@supabase/ssr');
   const { cookies } = await import('next/headers');
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies(); // AWAIT the cookies
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

@@ -3,11 +3,13 @@
 
 import React from 'react';
 import ResourcesManager from '@/components/resources/ResourcesManager';
+import TestFileUpload from '@/components/TestFileUpload';
 
 export default function ResourcesPage() {
   return (
     <div className="min-h-screen bg-gray-50/30 dark:bg-gray-900/20 py-6">
       <div className="space-y-6">
+        <TestFileUpload />
         <ResourcesManager />
       </div>
     </div>

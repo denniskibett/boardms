@@ -1,4 +1,4 @@
-// src/hooks/useResources.ts
+// src/hooks/useResources.ts - UPDATED
 import { useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
 import {
@@ -22,21 +22,14 @@ export function useResources() {
   // Memoized functions for better performance
   const memoizedFetchResources = useCallback(
     (filters?: { year?: number; type?: string }) => {
-      // Cache optimization: Only fetch if data is older than 30 seconds
-      const shouldRefetch = !lastFetched || Date.now() - lastFetched > 30000;
-      
-      if (shouldRefetch || filters) {
-        return dispatch(fetchResources(filters));
-      }
+      return dispatch(fetchResources(filters));
     },
-    [dispatch, lastFetched]
+    [dispatch]
   );
 
   const memoizedFetchCategories = useCallback(() => {
-    if (categories.length === 0) {
-      dispatch(fetchCategories());
-    }
-  }, [dispatch, categories.length]);
+    dispatch(fetchCategories());
+  }, [dispatch]);
 
   const memoizedCreateResource = useCallback(
     (resourceData: any) => dispatch(createResource(resourceData)),
@@ -55,17 +48,27 @@ export function useResources() {
 
   const memoizedFetchResourceFiles = useCallback(
     (resourceId: number) => {
-      // Only fetch if we don't have files cached for this resource
-      if (!files[resourceId]) {
-        return dispatch(fetchResourceFiles(resourceId));
-      }
+      return dispatch(fetchResourceFiles(resourceId));
     },
-    [dispatch, files]
+    [dispatch]
   );
 
   const memoizedUploadFile = useCallback(
-    (resourceId: number, file: File, ministryId?: number, displayName?: string) =>
-      dispatch(uploadFile({ resourceId, file, ministryId, displayName: displayName || file.name })),
+    async (resourceId: number, file: File, ministryId?: number, displayName?: string) => {
+      try {
+        const result = await dispatch(uploadFile({ 
+          resourceId, 
+          file, 
+          ministryId, 
+          displayName: displayName || file.name 
+        })).unwrap();
+        
+        return result;
+      } catch (error) {
+        console.error('Upload failed:', error);
+        throw error;
+      }
+    },
     [dispatch]
   );
 

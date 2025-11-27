@@ -1,71 +1,69 @@
-// src/app/api/auth/users/route.ts
-import { NextResponse } from 'next/server';
+// src/app/api/auth/user/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Starting to fetch auth users...');
-    
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('id');
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    console.log('🔍 Fetching user via API:', userId);
     const supabase = supabaseServer();
-    
-    // Get all auth users with pagination
-    const { data: { users }, error } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000
-    });
-    
-    if (error) {
-      console.error('❌ Error fetching auth users:', error);
-      return NextResponse.json({ error: error.message }, { status: 400 });
-    }
 
-    console.log(`✅ Found ${users?.length || 0} auth users`);
-
-    // Get custom users for comparison
-    const { data: customUsers, error: customError } = await supabase
+    // Method 1: Try to get user from our users table
+    const { data: dbUser, error: dbError } = await supabase
       .from('users')
-      .select('*');
+      .select('*')
+      .eq('id', userId)
+      .single();
 
-    if (customError) {
-      console.error('❌ Error fetching custom users:', customError);
-      // Continue with auth users only
+    if (dbUser && !dbError) {
+      console.log('✅ User found in database table');
+      return NextResponse.json(dbUser);
     }
 
-    console.log(`✅ Found ${customUsers?.length || 0} custom users`);
+    console.log('🔍 User not in database, checking auth...');
 
-    // Format the response safely
-    const formattedUsers = (users || []).map(user => {
-      const customUser = customUsers?.find(cu => cu.auth_id === user.id);
-      
-      return {
-        id: user.id,
-        email: user.email,
-        email_confirmed: !!user.email_confirmed_at,
-        last_sign_in: user.last_sign_in_at,
-        created_at: user.created_at,
-        user_metadata: user.user_metadata || {},
-        custom_user_linked: !!customUser,
-        custom_user_id: customUser?.id,
-        auth_id_in_custom: customUser?.auth_id,
-        status: customUser?.status || 'unknown',
-        role: customUser?.role || 'unknown',
-        image: customUser?.image, 
-        name: customUser?.name,   
-        phone: customUser?.phone || null
-      };
-    });
+    // Method 2: Get user from Supabase Auth (admin API)
+    const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(userId);
 
-    return NextResponse.json({
-      users: formattedUsers,
-      total: formattedUsers.length,
-      confirmed: formattedUsers.filter(u => u.email_confirmed).length,
-      unconfirmed: formattedUsers.filter(u => !u.email_confirmed).length
-    });
+    if (authError || !authUser) {
+      console.error('❌ Auth user not found:', authError);
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      );
+    }
 
-  } catch (error) {
-    console.error('💥 Error in auth users API:', error);
+    console.log('✅ User found in auth:', authUser.user.email);
+
+    // Transform to match our User interface
+    const userData = {
+      id: authUser.user.id,
+      auth_id: authUser.user.id,
+      email: authUser.user.email,
+      name: authUser.user.user_metadata?.name || authUser.user.email?.split('@')[0] || 'User',
+      role: authUser.user.user_metadata?.role || 'user',
+      status: authUser.user.user_metadata?.status || 'active',
+      image: authUser.user.user_metadata?.avatar_url || authUser.user.user_metadata?.picture,
+      phone: authUser.user.user_metadata?.phone,
+      last_login: authUser.user.last_sign_in_at,
+      created_at: authUser.user.created_at,
+      updated_at: authUser.user.updated_at,
+    };
+
+    return NextResponse.json(userData);
+  } catch (error: any) {
+    console.error('🚨 Error in auth user API:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch auth users' },
+      { error: 'Failed to fetch user: ' + error.message },
       { status: 500 }
     );
   }

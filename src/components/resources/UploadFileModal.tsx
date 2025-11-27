@@ -1,4 +1,4 @@
-// components/resources/UploadFileModal.tsx
+// src/components/resources/UploadFileModal.tsx - UPDATED
 "use client";
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -33,27 +33,38 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
   const [ministries, setMinistries] = useState<Ministry[]>([]);
   const [resourceDetails, setResourceDetails] = useState<ResourceDetails | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch resource details and ministries on mount
   useEffect(() => {
     const fetchData = async () => {
       try {
+        console.log('🔍 Fetching resource details for:', resourceId);
+        
         // Fetch resource details
         const resourceResponse = await fetch(`/api/resources/${resourceId}`);
         if (resourceResponse.ok) {
           const resourceData = await resourceResponse.json();
+          console.log('✅ Resource details:', resourceData);
           setResourceDetails(resourceData);
+        } else {
+          console.error('❌ Failed to fetch resource details');
         }
 
         // Fetch ministries
+        console.log('🔍 Fetching ministries...');
         const ministriesResponse = await fetch('/api/ministries');
         if (ministriesResponse.ok) {
           const ministriesData = await ministriesResponse.json();
+          console.log(`✅ Found ${ministriesData.length} ministries`);
           setMinistries(ministriesData);
+        } else {
+          console.error('❌ Failed to fetch ministries');
         }
       } catch (error) {
         console.error('Error fetching data:', error);
+        setUploadError('Failed to load resource details');
       }
     };
 
@@ -63,8 +74,11 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
   const handleFileSelect = (file: File) => {
     if (file) {
       setSelectedFile(file);
+      setUploadError(null);
       if (!displayName) {
-        setDisplayName(file.name.replace(/\.[^/.]+$/, "")); // Remove extension for display name
+        // Set display name from filename without extension
+        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+        setDisplayName(nameWithoutExt);
       }
     }
   };
@@ -91,36 +105,60 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setUploadError(null);
     
     if (!selectedFile) {
-      alert('Please select a file to upload');
+      setUploadError('Please select a file to upload');
       return;
     }
 
     if (!displayName.trim()) {
-      alert('Please enter a display name for the file');
+      setUploadError('Please enter a display name for the file');
       return;
     }
 
     if (!resourceDetails) {
-      alert('Resource details not loaded. Please try again.');
+      setUploadError('Resource details not loaded. Please try again.');
+      return;
+    }
+
+    // Validate file size (e.g., 50MB limit)
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (selectedFile.size > maxSize) {
+      setUploadError('File size must be less than 50MB');
       return;
     }
 
     setIsUploading(true);
 
     try {
-      const success = await uploadFile(
+      console.log('🚀 Starting file upload...', {
+        resourceId,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        displayName: displayName.trim(),
+        ministryId: ministryId ? parseInt(ministryId) : undefined
+      });
+
+      const result = await uploadFile(
         resourceId,
         selectedFile,
         ministryId ? parseInt(ministryId) : undefined,
         displayName.trim()
       );
 
-      if (success) {
+      console.log('📤 Upload result:', result);
+
+      if (result) {
+        console.log('✅ File uploaded successfully');
         onSuccess();
         onClose();
+      } else {
+        setUploadError('Failed to upload file. Please try again.');
       }
+    } catch (error: any) {
+      console.error('❌ Upload error:', error);
+      setUploadError(error.message || 'Failed to upload file. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -141,10 +179,10 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
       <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-sm">
         <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 mb-1">
           <Folder className="w-4 h-4" />
-          <span>File will be saved to:</span>
+          <span>File will be saved to Supabase Storage:</span>
         </div>
         <div className="font-mono text-xs bg-white dark:bg-gray-800 p-2 rounded border">
-          <div className="text-blue-600 dark:text-blue-400">resources/</div>
+          <div className="text-blue-600 dark:text-blue-400">documents/</div>
           <div className="ml-2 text-green-600 dark:text-green-400">{resourceDetails.resource_type_name}/</div>
           <div className="ml-4 text-purple-600 dark:text-purple-400">{resourceDetails.year}/</div>
           <div className="ml-6 text-orange-600 dark:text-orange-400">{resourceDetails.name}/</div>
@@ -152,6 +190,9 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
             {selectedFile ? selectedFile.name : 'your-file.pdf'}
           </div>
         </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          Files are stored securely in Supabase Storage with public read access
+        </p>
       </div>
     );
   };
@@ -162,7 +203,7 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Upload File
+            Upload File to Supabase
           </h2>
           <button
             onClick={onClose}
@@ -188,6 +229,13 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
             </div>
           )}
 
+          {/* Error Message */}
+          {uploadError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-sm text-red-700 dark:text-red-300">{uploadError}</p>
+            </div>
+          )}
+
           {/* File Upload Area */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -197,13 +245,15 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
               className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
                 dragActive
                   ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20'
-                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-              }`}
+                  : uploadError 
+                    ? 'border-red-300 dark:border-red-600'
+                    : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+              } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
               onDragOver={handleDrag}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => !isUploading && fileInputRef.current?.click()}
             >
               <input
                 ref={fileInputRef}
@@ -224,9 +274,11 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
                       {formatFileSize(selectedFile.size)}
                     </p>
                   </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Click or drag to change file
-                  </p>
+                  {!isUploading && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Click or drag to change file
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -240,8 +292,19 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
                     </p>
                   </div>
                   <p className="text-xs text-gray-400 dark:text-gray-500">
-                    Supports PDF, Word, Excel, PowerPoint, Images
+                    Supports PDF, Word, Excel, PowerPoint, Images (Max 50MB)
                   </p>
+                </div>
+              )}
+              
+              {isUploading && (
+                <div className="absolute inset-0 bg-white dark:bg-gray-800 bg-opacity-90 flex items-center justify-center rounded-lg">
+                  <div className="text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Uploading to Supabase...
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -285,7 +348,7 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
               </select>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Selecting a ministry will prefix the filename with ministry name
+              Selecting a ministry will help categorize the file
             </p>
           </div>
 
@@ -312,7 +375,7 @@ export default function UploadFileModal({ resourceId, onClose, onSuccess }: Uplo
               ) : (
                 <Upload className="w-4 h-4" />
               )}
-              {isUploading ? 'Uploading...' : 'Upload File'}
+              {isUploading ? 'Uploading...' : 'Upload to Supabase'}
             </button>
           </div>
         </form>
