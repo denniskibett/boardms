@@ -95,12 +95,6 @@ export default function SignInForm() {
   const [showUserSelector, setShowUserSelector] = useState(false);
   const router = useRouter();
 
-  // Add this useEffect to see the current state
-useEffect(() => {
-  console.log('📍 Current URL:', window.location.href);
-  console.log('📍 Current path:', window.location.pathname);
-}, []);
-
   useEffect(() => {
     checkSystemStatus();
     
@@ -283,8 +277,6 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
 
-  console.log('🔐 Starting authentication with NextAuth...', { email });
-
   try {
     const result = await signIn('credentials', {
       email: email.toLowerCase().trim(),
@@ -292,45 +284,18 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       redirect: false,
     });
 
-    console.log('🔍 SignIn result:', result);
-
     if (result?.error) {
-      console.error('🔴 NextAuth signin failed:', result.error);
       setError('Invalid email or password');
       handleLoginFailure();
       return;
     }
 
-    // ✅ SUCCESS - Verify session exists before redirecting
-    console.log('✅ NextAuth authentication successful!');
-    
-    // Check if session was actually created by making a session API call
-    const sessionResponse = await fetch('/api/auth/session');
-    const sessionData = await sessionResponse.json();
-    
-    console.log('🔍 Session check:', sessionData);
-    
-    if (sessionData.user) {
-      console.log('🎉 Session verified for user:', sessionData.user.email);
-      
-      // Show success alert
-      alert(`🎉 Session created successfully for ${sessionData.user.email}! Redirecting to dashboard...`);
-      
-      // Login successful
-      handleLoginSuccess();
-      
-      // Redirect after alert
-      setTimeout(() => {
-        window.location.href = '/';
-      }, 1500);
-    } else {
-      console.error('❌ Session not found after login');
-      setError('Session creation failed. Please try again.');
-      handleLoginFailure();
-    }
+    // ✅ SUCCESS - Redirect to dashboard
+    handleLoginSuccess();
+    window.location.href = '/';
 
   } catch (error) {
-    console.error('💥 Unexpected error during login:', error);
+    console.error('Unexpected error during login:', error);
     handleLoginFailure();
     setError('An unexpected error occurred. Please try again.');
   } finally {
@@ -485,8 +450,6 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
                 Enter your credentials to access the system
               </p>
             </div>
-
-          
             
             {isLocked && (
               <div className="p-3 mb-4 text-sm text-red-700 bg-red-100 border border-red-200 rounded-md dark:bg-red-900/20 dark:border-red-800 dark:text-red-300">
@@ -605,71 +568,6 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
                     </div>
                   </details>
                 </div>
-              </div>
-            )}
-            
-            {/* User Selection and Actions */}
-            {/* <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => setShowUserSelector(!showUserSelector)}
-                className="px-4 py-2 text-sm text-blue-600 border border-blue-300 rounded-md hover:bg-blue-50 dark:text-blue-400 dark:border-blue-600 dark:hover:bg-blue-900/20"
-                disabled={!systemStatus?.database.healthy || isLocked}
-              >
-                👤 Select Auth User
-              </button>
-              
-              <button
-                type="button"
-                onClick={createTestUser}
-                className="px-4 py-2 text-sm text-green-600 border border-green-300 rounded-md hover:bg-green-50 dark:text-green-400 dark:border-green-600 dark:hover:bg-green-900/20"
-                disabled={isLoading}
-              >
-                ➕ Create Test User
-              </button>
-            </div> */}
-
-            {/* {showUserSelector && systemStatus && (
-              <div className="p-3 mb-4 border rounded-lg bg-blue-50 dark:bg-blue-900/20">
-                <h4 className="mb-2 text-sm font-semibold">Select Auth User</h4>
-                <div className="max-h-32 overflow-y-auto space-y-1">
-                  {systemStatus.authUsers.list.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => fillDemoCredentials(user)}
-                      className="w-full p-2 text-left text-xs border rounded bg-white hover:bg-blue-100 dark:bg-gray-700 dark:hover:bg-blue-800/30"
-                    >
-                      <div className="font-medium">{user.email}</div>
-                      <div className="text-gray-600 dark:text-gray-400">
-                        {user.user_metadata?.role || 'user'} • 
-                        {user.email_confirmed ? ' ✓ Confirmed' : ' ⏳ Unconfirmed'} • 
-                        Password: <strong>TempPassword123!</strong>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )} */}
-            
-            {/* {systemStatus && systemStatus.syncStatus.notSynced > 0 && (
-              <div className="p-3 mb-4 text-sm text-yellow-700 bg-yellow-100 border border-yellow-200 rounded-md dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-300">
-                <strong>Sync Required:</strong>
-                <p>{systemStatus.syncStatus.notSynced} users need authentication setup.</p>
-                <button
-                  onClick={syncUsers}
-                  className="px-3 py-1 mt-2 text-xs bg-yellow-200 rounded hover:bg-yellow-300 dark:bg-yellow-700 dark:hover:bg-yellow-600"
-                  disabled={isLoading}
-                >
-                  🔄 Sync Users Now
-                </button>
-              </div>
-            )} */}
-            
-            {selectedUser && (
-              <div className="p-3 mb-4 text-sm text-green-700 bg-green-100 border border-green-200 rounded-md dark:bg-green-900/20 dark:border-green-800 dark:text-green-300">
-                <strong>Selected User:</strong> {selectedUser.email}
-                <br />
-                <strong>Password:</strong> TempPassword123! (default)
               </div>
             )}
             

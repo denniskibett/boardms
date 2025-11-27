@@ -1,4 +1,3 @@
-// hooks/useUser.ts
 import { useSession } from "next-auth/react"
 
 export function useUser() {
@@ -7,7 +6,8 @@ export function useUser() {
   return {
     user: session?.user || null,
     profile: session?.user || null, // For backward compatibility
-    loading: status === 'loading'
+    loading: status === 'loading',
+    status
   }
 }
 
