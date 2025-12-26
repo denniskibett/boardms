@@ -26,9 +26,8 @@ const nextConfig: NextConfig = {
     // Or disable completely:
     // unoptimized: true,
   },
-  experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
-  },
+ serverExternalPackages: ['@supabase/supabase-js'],
+
   webpack(config) {
     config.module.rules.push({
       test: /\.svg$/,

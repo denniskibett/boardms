@@ -7,6 +7,8 @@ import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
 import Button from "@/components/ui/button/Button";
 import { supabase } from "@/lib/supabase/client";
+import { useSystemSettings } from '@/context/SystemSettingsContext';
+import Image from 'next/image';
 
 export default function UpdatePasswordForm() {
   const [password, setPassword] = useState("");
@@ -16,7 +18,18 @@ export default function UpdatePasswordForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [passwordStrength, setPasswordStrength] = useState(0);
   const router = useRouter();
+
+  // Get system settings
+  const { 
+    settings, 
+    loading: settingsLoading,
+    getLogo,
+    getSystemName,
+    validatePassword,
+    getPasswordRequirements
+  } = useSystemSettings();
 
   useEffect(() => {
     // Check if user has a valid session
@@ -26,6 +39,35 @@ export default function UpdatePasswordForm() {
       }
     });
   }, [router]);
+
+  const handlePasswordChange = (value: string) => {
+    setPassword(value);
+    const strength = calculatePasswordStrength(value);
+    setPasswordStrength(strength);
+  };
+
+  const calculatePasswordStrength = (password: string): number => {
+    let strength = 0;
+    if (password.length >= 6) strength += 20;
+    if (password.length >= 8) strength += 20;
+    if (/[a-z]/.test(password)) strength += 20;
+    if (/[A-Z]/.test(password)) strength += 20;
+    if (/[0-9]/.test(password)) strength += 10;
+    if (/[^a-zA-Z0-9]/.test(password)) strength += 10;
+    return Math.min(strength, 100);
+  };
+
+  const getPasswordStrengthColor = (strength: number) => {
+    if (strength < 40) return 'bg-red-500';
+    if (strength < 70) return 'bg-yellow-500';
+    return 'bg-green-500';
+  };
+
+  const getPasswordStrengthText = (strength: number) => {
+    if (strength < 40) return 'Weak';
+    if (strength < 70) return 'Medium';
+    return 'Strong';
+  };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +81,9 @@ export default function UpdatePasswordForm() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long");
+    // Validate against system password policy
+    if (!validatePassword(password)) {
+      setError(`Password does not meet system requirements: ${getPasswordRequirements()}`);
       setLoading(false);
       return;
     }
@@ -65,9 +108,37 @@ export default function UpdatePasswordForm() {
     }
   };
 
+  if (settingsLoading) {
+    return (
+      <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading system...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full">
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
+        {/* Updated: Use system logo from settings */}
+        <div className="flex justify-center mb-5 sm:mb-8">
+          <div className="relative w-48 h-12">
+            <Image
+              src={getLogo('auth')}
+              alt={`${getSystemName()} Logo`}
+              fill
+              className="object-contain"
+              priority
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = '/images/logo/auth-logo.svg';
+              }}
+            />
+          </div>
+        </div>
+
         <div className="w-full max-w-md mx-auto mb-5">
           <Link
             href="/signin"
@@ -109,7 +180,7 @@ export default function UpdatePasswordForm() {
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter new password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => handlePasswordChange(e.target.value)}
                     disabled={loading}
                     required
                     minLength={6}
@@ -125,6 +196,24 @@ export default function UpdatePasswordForm() {
                     )}
                   </span>
                 </div>
+                
+                {/* Password strength indicator */}
+                {password && (
+                  <div className="mt-2">
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Password strength:</span>
+                      <span className={`font-medium ${getPasswordStrengthColor(passwordStrength).replace('bg-', 'text-')}`}>
+                        {getPasswordStrengthText(passwordStrength)}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-300 ${getPasswordStrengthColor(passwordStrength)}`}
+                        style={{ width: `${passwordStrength}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

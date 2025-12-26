@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
+import { useSystemSettings } from '@/context/SystemSettingsContext';
 import {
   ChevronDownIcon,
   HorizontaLDots,
@@ -16,7 +17,6 @@ import {
   SettingsIcon,
   AuditIcon
 } from "@/icons/index";
-
 
 type NavItem = {
   name: string;
@@ -31,34 +31,6 @@ const navItems: NavItem[] = [
     name: "Dashboard",
     path: "/",
   },
-  // {
-  //   icon: <DocumentIcon />,
-  //   name: "Government Memos",
-  //   subItems: [
-  //     // { name: "Create Memo", path: "/memos/create" },
-  //     { name: "My Memos", path: "/memos" },
-  //     { name: "All Memos", path: "/memos/all" },
-  //   ],
-  // },
-  // {
-  //   icon: <PageIcon />, 
-  //   name: "Agenda & Books",
-  //   subItems: [
-  //     { name: "All Agenda", path: "/agenda" },
-  //     { name: "Create Agenda", path: "/agenda/create" },
-  //     { name: "Committee Agenda Books", path: "/committees/infrastructure/tier1-agenda" },
-  //     { name: "Cabinet Agenda Books", path: "/cabinet/tier2-agenda" },
-  //   ],
-  // },
-  // {
-  //   icon: <CommitteeIcon />,
-  //   name: "Committees",
-  //   subItems: [
-  //     { name: "Committee List", path: "/committees" },
-  //     { name: "My Committees", path: "/committees/my" },
-  //     { name: "Assign Members", path: "/committees/assign" },
-  //   ],
-  // },
   {
     icon: <MeetingIcon />,
     name: "Meetings",
@@ -68,22 +40,11 @@ const navItems: NavItem[] = [
       { name: "Meeting Minutes", path: "/meetings/minutes" },
     ],
   },
-   {
+  {
     icon: <DocumentIcon />,
     name: "Resources",
     path: "/resources",
   },
-  
-  // { 
-  //   icon: <DecisionIcon />,
-  //   name: "Decisions",
-  //   path: "/decisions",
-  // },
-  // {
-  //   icon: <ActionIcon />,
-  //   name: "Action Letters",
-  //   path: "/action-letters",
-  // },
 ];
 
 const managementItems: NavItem[] = [
@@ -116,6 +77,14 @@ const managementItems: NavItem[] = [
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const pathname = usePathname();
+  
+  // Get system settings
+  const { 
+    settings, 
+    loading: settingsLoading,
+    getLogo,
+    getSystemName
+  } = useSystemSettings();
 
   const [openSubmenu, setOpenSubmenu] = useState<{
     type: "main" | "management";
@@ -304,6 +273,16 @@ const AppSidebar: React.FC = () => {
     </ul>
   );
 
+  if (settingsLoading) {
+    return (
+      <aside className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 w-[90px]`}>
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand-500"></div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
       className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
@@ -328,33 +307,49 @@ const AppSidebar: React.FC = () => {
           {isExpanded || isHovered || isMobileOpen ? (
             <>
               <div className="flex items-center space-x-2">
-                <Image
-                  className="dark:hidden"
-                  src="/images/logo/logo.svg"
-                  alt="E-Cabinet Logo"
-                  width={80}
-                  height={40}
-                />
+                {/* Updated: Use system logo from settings */}
+                <div className="relative w-12 h-12">
+                  <Image
+                    src={getLogo('primary')}
+                    alt={`${getSystemName()} Logo`}
+                    fill
+                    className="object-contain dark:hidden"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = '/images/logo/logo.svg';
+                    }}
+                  />
+                </div>
+                <div className="relative w-12 h-12 hidden dark:block">
+                  <Image
+                    src={getLogo('dark')}
+                    alt={`${getSystemName()} Logo`}
+                    fill
+                    className="object-contain"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = '/images/logo/logo-dark.svg';
+                    }}
+                  />
+                </div>
                 <span className="text-xl font-semibold text-gray-800 dark:text-white">
-                  BoardMS
+                  {getSystemName()}
                 </span>
               </div>
-
-              <Image
-                className="hidden dark:block"
-                src="/images/logo/logo.svg"
-                alt="E-Cabinet Logo"
-                width={150}
-                height={40}
-              />
             </>
           ) : (
-            <Image
-              src="/images/logo/logo.svg"
-              alt="E-Cabinet"
-              width={32}
-              height={32}
-            />
+            <div className="relative w-8 h-8">
+              <Image
+                src={getLogo('icon')}
+                alt={`${getSystemName()} Logo`}
+                fill
+                className="object-contain dark:hidden"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/images/logo/logo-icon.svg';
+                }}
+              />
+            </div>
           )}
         </Link>
       </div>
@@ -396,7 +391,6 @@ const AppSidebar: React.FC = () => {
             </div>
           </div>
         </nav>
-        {/* {isExpanded || isHovered || isMobileOpen ? <SidebarWidget /> : null} */}
       </div>
     </aside>
   );

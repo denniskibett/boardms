@@ -217,7 +217,7 @@ export default function UsersList() {
         setLoading(true);
         setError(null);
         
-        const response = await fetch('/api/auth/users');
+        const response = await fetch('/api/auth/users/all');
         console.log('📡 API Response status:', response.status);
         
         if (!response.ok) {

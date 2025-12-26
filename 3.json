@@ -1,0 +1,79 @@
+[
+	{
+		"COLUMN_NAME" : "id",
+		"DATA_TYPE" : "bigint",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "bigint unsigned"
+	},
+	{
+		"COLUMN_NAME" : "data_clerk_id",
+		"DATA_TYPE" : "bigint",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "bigint unsigned"
+	},
+	{
+		"COLUMN_NAME" : "marriage_teller_id",
+		"DATA_TYPE" : "bigint",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "bigint unsigned"
+	},
+	{
+		"COLUMN_NAME" : "year",
+		"DATA_TYPE" : "int",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "int"
+	},
+	{
+		"COLUMN_NAME" : "month",
+		"DATA_TYPE" : "int",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "int"
+	},
+	{
+		"COLUMN_NAME" : "filled_count",
+		"DATA_TYPE" : "int",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : "0",
+		"COLUMN_TYPE" : "int"
+	},
+	{
+		"COLUMN_NAME" : "target_count",
+		"DATA_TYPE" : "int",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : "0",
+		"COLUMN_TYPE" : "int"
+	},
+	{
+		"COLUMN_NAME" : "status",
+		"DATA_TYPE" : "enum",
+		"IS_NULLABLE" : "NO",
+		"COLUMN_DEFAULT" : "active",
+		"COLUMN_TYPE" : "enum('active','completed','locked')"
+	},
+	{
+		"COLUMN_NAME" : "notes",
+		"DATA_TYPE" : "text",
+		"IS_NULLABLE" : "YES",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "text"
+	},
+	{
+		"COLUMN_NAME" : "created_at",
+		"DATA_TYPE" : "timestamp",
+		"IS_NULLABLE" : "YES",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "timestamp"
+	},
+	{
+		"COLUMN_NAME" : "updated_at",
+		"DATA_TYPE" : "timestamp",
+		"IS_NULLABLE" : "YES",
+		"COLUMN_DEFAULT" : null,
+		"COLUMN_TYPE" : "timestamp"
+	}
+]

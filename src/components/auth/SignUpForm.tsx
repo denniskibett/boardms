@@ -1,6 +1,6 @@
-// components/auth/SignUpForm.tsx - UPDATE WITH THIS COMPLETE COMPONENT
+// components/auth/SignUpForm.tsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { signIn } from "next-auth/react";
@@ -9,13 +9,67 @@ import Input from "@/components/form/input/InputField";
 import Label from "@/components/form/Label";
 import { ChevronLeftIcon, EyeCloseIcon, EyeIcon } from "@/icons";
 import Link from "next/link";
+import { useSystemSettings } from '@/context/SystemSettingsContext';
+import Image from 'next/image';
 
 export default function SignUpForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
   const router = useRouter();
+  
+  // Get system settings
+  const { 
+    settings, 
+    loading: settingsLoading,
+    getLogo,
+    getSystemName,
+    getSystemDescription,
+    validatePassword,
+    getPasswordRequirements,
+    getPasswordPolicy
+  } = useSystemSettings();
+
+  const handlePasswordChange = (password: string) => {
+    const strength = calculatePasswordStrength(password);
+    setPasswordStrength(strength);
+  };
+
+  const calculatePasswordStrength = (password: string): number => {
+    const policy = getPasswordPolicy();
+    let strength = 0;
+    
+    if (policy === 'basic') {
+      if (password.length >= 6) strength += 100;
+    } else if (policy === 'medium') {
+      if (password.length >= 8) strength += 25;
+      if (/[a-zA-Z]/.test(password)) strength += 25;
+      if (/[0-9]/.test(password)) strength += 25;
+      if (/[^a-zA-Z0-9]/.test(password)) strength += 25;
+    } else if (policy === 'strong') {
+      if (password.length >= 12) strength += 20;
+      if (/[a-z]/.test(password)) strength += 20;
+      if (/[A-Z]/.test(password)) strength += 20;
+      if (/[0-9]/.test(password)) strength += 20;
+      if (/[^a-zA-Z0-9]/.test(password)) strength += 20;
+    }
+    
+    return Math.min(strength, 100);
+  };
+
+  const getPasswordStrengthColor = (strength: number) => {
+    if (strength < 40) return 'bg-red-500';
+    if (strength < 70) return 'bg-yellow-500';
+    return 'bg-green-500';
+  };
+
+  const getPasswordStrengthText = (strength: number) => {
+    if (strength < 40) return 'Weak';
+    if (strength < 70) return 'Medium';
+    return 'Strong';
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -30,6 +84,13 @@ export default function SignUpForm() {
 
     if (!isChecked) {
       setError("You must agree to the Terms and Conditions");
+      setLoading(false);
+      return;
+    }
+
+    // Validate password against system policy
+    if (!validatePassword(password)) {
+      setError(`Password does not meet requirements: ${getPasswordRequirements()}`);
       setLoading(false);
       return;
     }
@@ -76,6 +137,17 @@ export default function SignUpForm() {
     }
   };
 
+  if (settingsLoading) {
+    return (
+      <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+          <span className="ml-3 text-gray-600 dark:text-gray-400">Loading system...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 lg:w-1/2 w-full overflow-y-auto no-scrollbar">
       <div className="w-full max-w-md sm:pt-10 mx-auto mb-5">
@@ -87,14 +159,32 @@ export default function SignUpForm() {
           Back to dashboard
         </Link>
       </div>
+      
+      {/* Updated: Use system logo from settings */}
+      <div className="flex justify-center mb-5 sm:mb-8">
+        <div className="relative w-48 h-12">
+          <Image
+            src={getLogo('auth')}
+            alt={`${getSystemName()} Logo`}
+            fill
+            className="object-contain"
+            priority
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = '/images/logo/auth-logo.svg';
+            }}
+          />
+        </div>
+      </div>
+      
       <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
         <div>
-          <div className="mb-5 sm:mb-8">
+          <div className="mb-5 sm:mb-8 text-center">
             <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-              Sign Up
+              Sign Up for {getSystemName()}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Enter your email and password to sign up!
+              {getSystemDescription()}
             </p>
           </div>
           
@@ -218,6 +308,7 @@ export default function SignUpForm() {
                     required
                     disabled={loading}
                     minLength={6}
+                    onChange={(e) => handlePasswordChange(e.target.value)}
                   />
                   <span
                     onClick={() => setShowPassword(!showPassword)}
@@ -229,6 +320,25 @@ export default function SignUpForm() {
                       <EyeCloseIcon className="fill-gray-500 dark:fill-gray-400" />
                     )}
                   </span>
+                </div>
+                
+                {/* Password strength indicator */}
+                <div className="mt-2">
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Password strength:</span>
+                    <span className={`font-medium ${getPasswordStrengthColor(passwordStrength).replace('bg-', 'text-')}`}>
+                      {getPasswordStrengthText(passwordStrength)}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full transition-all duration-300 ${getPasswordStrengthColor(passwordStrength)}`}
+                      style={{ width: `${passwordStrength}%` }}
+                    ></div>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Requirements: {getPasswordRequirements()}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">

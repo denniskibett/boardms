@@ -10,6 +10,8 @@ import Link from "next/link";
 import React, { useState, useEffect } from "react";
 import ErrorModal from '@/components/ui/modal/ErrorModal';
 import { supabase } from '@/lib/supabase/client';
+import { useSystemSettings } from '@/context/SystemSettingsContext';
+import Image from 'next/image';
 
 interface AuthUser {
   id: string;
@@ -91,9 +93,17 @@ export default function SignInForm() {
   const [isLocked, setIsLocked] = useState(false);
   const [lockTime, setLockTime] = useState(0);
   const [debugInfo, setDebugInfo] = useState<string>('');
-  const [selectedUser, setSelectedUser] = useState<AuthUser | null>(null);
-  const [showUserSelector, setShowUserSelector] = useState(false);
   const router = useRouter();
+
+  // Get system settings
+  const { 
+    settings, 
+    loading: settingsLoading,
+    getLogo,
+    getSystemName, 
+    getSystemDescription,
+    getCopyrightText 
+  } = useSystemSettings();
 
   useEffect(() => {
     checkSystemStatus();
@@ -261,96 +271,43 @@ export default function SignInForm() {
     localStorage.removeItem('loginLockUntil');
   };
 
-const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-  e.preventDefault();
-  
-  if (isLocked) {
-    setError(`Account temporarily locked. Please try again in ${Math.ceil(lockTime / 1000 / 60)} minutes.`);
-    return;
-  }
-
-  setIsLoading(true);
-  setError('');
-  setShowErrorModal(false);
-  
-  const formData = new FormData(e.currentTarget);
-  const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-
-  try {
-    const result = await signIn('credentials', {
-      email: email.toLowerCase().trim(),
-      password: password.trim(),
-      redirect: false,
-    });
-
-    if (result?.error) {
-      setError('Invalid email or password');
-      handleLoginFailure();
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    if (isLocked) {
+      setError(`Account temporarily locked. Please try again in ${Math.ceil(lockTime / 1000 / 60)} minutes.`);
       return;
     }
 
-    // ✅ SUCCESS - Redirect to dashboard
-    handleLoginSuccess();
-    window.location.href = '/';
-
-  } catch (error) {
-    console.error('Unexpected error during login:', error);
-    handleLoginFailure();
-    setError('An unexpected error occurred. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  const fillDemoCredentials = (user?: AuthUser) => {
-    const emailInput = document.querySelector('input[name="email"]') as HTMLInputElement;
-    const passwordInput = document.querySelector('input[name="password"]') as HTMLInputElement;
-    
-    if (emailInput && passwordInput) {
-      if (user) {
-        emailInput.value = user.email;
-        passwordInput.value = 'TempPassword123!'; // Default password from your sync
-        setSelectedUser(user);
-        setShowUserSelector(false);
-      } else {
-        // Use first confirmed auth user
-        const firstAuthUser = systemStatus?.authUsers.list.find(u => u.email_confirmed);
-        if (firstAuthUser) {
-          emailInput.value = firstAuthUser.email;
-          passwordInput.value = 'TempPassword123!';
-          setSelectedUser(firstAuthUser);
-        } else {
-          emailInput.value = 'admin@gov.go.ke';
-          passwordInput.value = 'TempPassword123!';
-        }
-      }
-    }
-  };
-
-  const syncUsers = async () => {
-    if (!confirm('This will sync all active users to Supabase Auth. Continue?')) return;
-    
     setIsLoading(true);
+    setError('');
+    setShowErrorModal(false);
+    
+    const formData = new FormData(e.currentTarget);
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
+
     try {
-      const response = await fetch('/api/admin/users', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const result = await signIn('credentials', {
+        email: email.toLowerCase().trim(),
+        password: password.trim(),
+        redirect: false,
       });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        alert(`✅ Sync completed!\n\n• ${result.successful} users processed successfully\n• Default password: TempPassword123!\n\nUsers should reset their passwords on first login.`);
-        await checkSystemStatus();
-      } else {
-        alert(`❌ Sync failed: ${result.error}`);
+
+      if (result?.error) {
+        setError('Invalid email or password');
+        handleLoginFailure();
+        return;
       }
+
+      // ✅ SUCCESS - Redirect to dashboard
+      handleLoginSuccess();
+      window.location.href = '/';
+
     } catch (error) {
-      alert('❌ Error syncing users');
-      console.error('Sync error:', error);
+      console.error('Unexpected error during login:', error);
+      handleLoginFailure();
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -372,52 +329,47 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     setDebugInfo('');
   };
 
-  const createTestUser = async () => {
-    if (!confirm('Create a test user with email: test@example.com and password: test123?')) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/admin/users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: 'test@example.com',
-          password: 'test123',
-          name: 'Test User',
-          role: 'user',
-          status: 'active'
-        }),
-      });
-      
-      const result = await response.json();
-      
-      if (response.ok) {
-        alert('✅ Test user created successfully!\n\nEmail: test@example.com\nPassword: test123');
-        await checkSystemStatus();
-      } else {
-        alert(`❌ Failed to create test user: ${result.error}`);
-      }
-    } catch (error) {
-      alert('❌ Error creating test user');
-      console.error('Create user error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  if (settingsLoading) {
+    return (
+      <div className="flex flex-col flex-1 lg:w-1/2 w-full">
+        <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
+            <span className="ml-3 text-gray-600 dark:text-gray-400">Loading system...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="flex flex-col flex-1 lg:w-1/2 w-full">
         <div className="flex flex-col justify-center flex-1 w-full max-w-md mx-auto">
           <div>
+            {/* Updated: Use system logo from settings */}
+            <div className="flex justify-center mb-5 sm:mb-8">
+              <div className="relative w-48 h-12">
+                <Image
+                  src={getLogo('auth')}
+                  alt={`${getSystemName()} Logo`}
+                  fill
+                  className="object-contain"
+                  priority
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.src = '/images/logo/auth-logo.svg';
+                  }}
+                />
+              </div>
+            </div>
+
             <div className="mb-5 sm:mb-8 text-center">
               <h1 className="mb-2 font-semibold text-gray-800 text-title-sm dark:text-white/90 sm:text-title-md">
-                boardms System
+                {getSystemName()}
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Government Meeting Management Platform
+                {getSystemDescription()}
               </p>
               
               {systemStatus && (
@@ -668,6 +620,13 @@ const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
                   ✅ System online - {systemStatus.authUsers.total} auth users, {systemStatus.syncStatus.synced}/{systemStatus.customUsers.total} synced
                 </p>
               )}
+            </div>
+
+            {/* Updated: Copyright from system settings */}
+            <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {getCopyrightText()}
+              </p>
             </div>
           </div>
         </div>
