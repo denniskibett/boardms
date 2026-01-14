@@ -1,9 +1,9 @@
 "use client";
 import React, { useState } from 'react';
 import { FileText, Edit, BookOpen, CheckCircle2, ArrowDown } from 'lucide-react';
-import FileIcon from '@/components/agenda/FileIcon';
-import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
-import QuickAddAgenda from '@/components/agenda/QuickAddAgenda';
+import FileIcon from '@/components/agendaold/FileIcon';
+import AgendaSlideOver from '@/components/agendaold/AgendaSlideOver';
+import QuickAddAgenda from '@/components/agendaold/QuickAddAgenda';
 
 interface AgendaDocument {
   id: string;

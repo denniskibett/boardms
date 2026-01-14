@@ -125,7 +125,18 @@ export default function OpenBook({ meetingId }: OpenBookProps) {
         />
       )}
 
-      <div className={`${isFullscreen ? 'fixed inset-0 z-40 bg-white' : 'h-screen'} flex flex-col bg-gray-50 rounded-lg shadow-lg`}>
+      <div
+  className={`
+    ${isFullscreen ? 'fixed inset-0 z-40' : 'h-screen'} 
+    flex flex-col 
+    bg-white dark:bg-gray-900 
+    rounded-2xl 
+    shadow-lg dark:shadow-black/20
+    overflow-hidden
+    transition-all duration-300
+  `}
+>
+
         {/* Header */}
         <div className="flex-shrink-0 bg-white border-b">
           <div className="flex items-center justify-between p-4">

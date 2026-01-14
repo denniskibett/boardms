@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
-import { query } from '@/lib/db';
-import { getServerSession } from 'next-auth/next'; // ← Changed import
+import { supabaseDb } from '@/lib/supabase-db';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
 
 // Helper function to get current user from session
 async function getCurrentUser(request: NextRequest) {
   try {
-    // For API routes, we need to use the request headers to get the session
     const session = await getServerSession(authOptions);
     return session?.user || null;
   } catch (error) {
@@ -58,14 +57,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('👤 Current user:', currentUser);
+    console.log('👤 Current user:', { id: currentUser.id, email: currentUser.email, name: currentUser.name });
 
-    // Verify agenda exists
+    // Verify agenda exists using supabaseDb
     console.log('🔍 Verifying agenda exists:', agendaId);
-    const agendaResult = await query(
-      'SELECT id FROM agenda WHERE id = $1',
-      [parseInt(agendaId)]
-    );
+    const agendaResult = await supabaseDb.select('agenda', {
+      select: 'id',
+      eq: {
+        field: 'id',
+        value: parseInt(agendaId)
+      }
+    });
 
     if (agendaResult.rows.length === 0) {
       console.error('❌ Agenda not found:', agendaId);
@@ -130,40 +132,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save to database with actual user ID
+    // Save to database using supabaseDb
     console.log('💾 Saving document to database...');
     try {
-      const result = await query(
-        `
-        INSERT INTO agenda_documents (
-          agenda_id,
-          name,
-          file_type,
-          file_url,
-          file_size,
-          uploaded_by,
-          uploaded_at,
-          metadata,
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, NOW())
-        RETURNING *
-        `,
-        [
-          parseInt(agendaId),
-          name || file.name,
-          fileType,
-          publicUrl,
-          fileSize,
-          currentUser.id, // Use actual user ID from auth
-          JSON.stringify({
-            originalName: file.name,
-            uploadedAt: new Date().toISOString(),
-            mimeType: file.type,
-            fileExtension: fileExtension,
-            uploadedBy: currentUser.name || currentUser.email
-          })
-        ]
-      );
+      // FIX: Handle UUID vs integer user ID
+      // First, let's check the user ID type by trying to find the user
+      let userId = currentUser.id;
+      
+      // If user ID is UUID, we need to get the numeric ID from users table
+      const userResult = await supabaseDb.select('users', {
+        select: 'id',
+        eq: {
+          field: 'email',
+          value: currentUser.email || ''
+        }
+      });
+
+      if (userResult.rows.length > 0) {
+        userId = userResult.rows[0].id;
+        console.log('✅ Found user with numeric ID:', userId);
+      } else {
+        // Try using the UUID directly if your database supports it
+        console.log('⚠️ Using UUID as user ID:', userId);
+      }
+
+      const insertData = {
+        agenda_id: parseInt(agendaId),
+        name: name || file.name,
+        file_type: fileType,
+        file_url: publicUrl,
+        file_size: fileSize,
+        uploaded_by: userId, // Use the resolved user ID
+        uploaded_at: new Date().toISOString(),
+        metadata: JSON.stringify({
+          originalName: file.name,
+          uploadedAt: new Date().toISOString(),
+          mimeType: file.type,
+          fileExtension: fileExtension,
+          uploadedBy: currentUser.name || currentUser.email,
+          uploadedById: currentUser.id
+        }),
+        created_at: new Date().toISOString()
+      };
+
+      console.log('📤 Inserting document data:', insertData);
+
+      const result = await supabaseDb.insert('agenda_documents', insertData);
+
+      if (!result.rows || result.rows.length === 0) {
+        throw new Error('Failed to insert document - no rows returned');
+      }
 
       const savedDocument = result.rows[0];
       console.log('✅ Document saved to database:', {
@@ -189,7 +207,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           error: 'Failed to save document to database',
-          details: dbError.message 
+          details: dbError.message,
+          // Include more context for debugging
+          userInfo: {
+            userId: currentUser.id,
+            userEmail: currentUser.email,
+            userName: currentUser.name
+          }
         },
         { status: 500 }
       );
@@ -201,7 +225,6 @@ export async function POST(request: NextRequest) {
       { 
         error: 'Failed to upload document',
         details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         timestamp: new Date().toISOString()
       },
       { status: 500 }
@@ -209,7 +232,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ... rest of the GET and DELETE functions remain the same
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -224,31 +246,25 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const documents = await query(
-      `
-      SELECT 
-        ad.id,
-        ad.agenda_id,
-        ad.name,
-        ad.file_type,
-        ad.file_url,
-        ad.file_size,
-        ad.uploaded_by,
-        ad.uploaded_at,
-        ad.metadata,
-        ad.created_at,
-        u.name as uploaded_by_name,
-        u.email as uploaded_by_email
-      FROM agenda_documents ad
-      LEFT JOIN users u ON ad.uploaded_by = u.id
-      WHERE ad.agenda_id = $1
-      ORDER BY ad.uploaded_at DESC
-      `,
-      [parseInt(agendaId)]
-    );
+    // Use supabaseDb to fetch documents
+    const result = await supabaseDb.select('agenda_documents', {
+      select: '*',
+      eq: {
+        field: 'agenda_id',
+        value: parseInt(agendaId)
+      },
+      order: {
+        field: 'uploaded_at',
+        ascending: false
+      }
+    });
 
-    console.log(`✅ Found ${documents.rows.length} documents for agenda ${agendaId}`);
-    return NextResponse.json(documents.rows);
+    console.log(`✅ Found ${result.rows?.length || 0} documents for agenda ${agendaId}`);
+    
+    // Transform data to include user names if needed
+    const documents = result.rows || [];
+    
+    return NextResponse.json(documents);
 
   } catch (error: any) {
     console.error('❌ Error fetching documents:', error);
@@ -285,11 +301,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Get document first to delete the file
-    const document = await query(
-      'SELECT * FROM agenda_documents WHERE id = $1',
-      [parseInt(documentId)]
-    );
+    // Get document first to delete the file using supabaseDb
+    const document = await supabaseDb.select('agenda_documents', {
+      select: '*',
+      eq: {
+        field: 'id',
+        value: parseInt(documentId)
+      }
+    });
 
     if (document.rows.length === 0) {
       return NextResponse.json(
@@ -301,14 +320,6 @@ export async function DELETE(request: NextRequest) {
     const doc = document.rows[0];
     console.log('📁 Document to delete:', doc);
 
-    // Optional: Check if user has permission to delete (creator or admin)
-    // if (doc.uploaded_by !== currentUser.id && currentUser.role !== 'admin') {
-    //   return NextResponse.json(
-    //     { error: 'Not authorized to delete this document' },
-    //     { status: 403 }
-    //   );
-    // }
-
     // Delete the physical file
     try {
       const filePath = join(process.cwd(), 'public', doc.file_url);
@@ -319,11 +330,11 @@ export async function DELETE(request: NextRequest) {
       console.error('⚠️ Error deleting file (continuing with DB deletion):', error);
     }
 
-    // Delete from database
-    await query(
-      'DELETE FROM agenda_documents WHERE id = $1',
-      [parseInt(documentId)]
-    );
+    // Delete from database using supabaseDb
+    await supabaseDb.delete('agenda_documents', {
+      field: 'id',
+      value: parseInt(documentId)
+    });
 
     console.log('✅ Document deleted from database');
     return NextResponse.json({ success: true });

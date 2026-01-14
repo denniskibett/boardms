@@ -132,7 +132,12 @@ function UserAvatar({ user }: { user: AuthUser }) {
   const getUserInitials = (user: AuthUser) => {
     try {
       const name = user.user_metadata?.name || user.email || '';
-      return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+      return name
+        .split(' ')
+        .map((n: string) => n[0]) 
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
     } catch {
       return 'US';
     }

@@ -700,9 +700,9 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 overflow-hidden z-50">
+    <div className="fixed inset-0 overflow-hidden z-[99999]">
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={onClose} />
+        <div className="absolute inset-0 bg-gray-400/50 backdrop-blur-[32px] transition-opacity" onClick={onClose} />
         
         <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex">
           <div className="w-screen max-w-2xl">
