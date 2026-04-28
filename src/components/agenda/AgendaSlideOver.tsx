@@ -761,12 +761,12 @@ const AgendaSlideOver: React.FC<AgendaSlideOverProps> = ({ agenda, isOpen, onClo
                   )}
 
                   {/* Loading State */}
-                  {isLoading && (
+                  {/* {isLoading && (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
                       <p className="text-gray-600 dark:text-gray-400">Loading form data...</p>
                     </div>
-                  )}
+                  )} */}
 
                   {!isLoading && (
                     <>

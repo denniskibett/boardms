@@ -53,7 +53,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  // Get all documents from all agenda items, sorted by agenda order
+  // Get all attachments from all agenda items, sorted by agenda order
   const allDocuments = agenda.flatMap(agendaItem => 
     (agendaItem.documents || []).map(doc => ({
       ...doc,
@@ -69,7 +69,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
     return new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime();
   });
 
-  // Convert all documents to HTML and combine them
+  // Convert all attachments to HTML and combine them
   const processAllDocuments = useCallback(async () => {
     if (allDocuments.length === 0) {
       setCombinedContent('');
@@ -136,11 +136,11 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
       setTotalPages(Math.max(1, pageCount));
       setCurrentPage(0);
     } catch (error) {
-      console.error('Error processing documents:', error);
+      console.error('Error processing attachments:', error);
       setCombinedContent(`
         <div style="padding: 3rem; text-align: center; color: #6b7280;">
           <div style="margin-bottom: 1rem;">❌</div>
-          <p>Failed to load documents</p>
+          <p>Failed to load attachments</p>
           <p style="font-size: 0.875rem; margin-top: 0.5rem;">Please try again later</p>
         </div>
       `);
@@ -184,7 +184,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
       return await convertPDFToHTML(doc);
     }
 
-    // For Word documents - use Mammoth.js
+    // For Word attachments - use Mammoth.js
     if (['doc', 'docx'].includes(fileExtension)) {
       return await convertWordToHTML(doc);
     }
@@ -332,7 +332,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
     });
   };
 
-  // Convert Word documents to HTML using Mammoth.js
+  // Convert Word attachments to HTML using Mammoth.js
   const convertWordToHTML = async (doc: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
       import('mammoth').then(mammoth => {
@@ -486,7 +486,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
   };
 
   const handleDownloadAll = () => {
-    // Create a zip of all documents or download individually
+    // Create a zip of all attachments or download individually
     allDocuments.forEach(doc => {
       const link = global.document.createElement('a');
       link.href = doc.file_url;
@@ -512,7 +512,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
           <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">No agenda items</p>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-            Add agenda items to see documents here
+            Add agenda items to see attachments here
           </p>
         </div>
       </div>
@@ -524,7 +524,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Meeting Documents
+          Meeting Attachments
         </h3>
         {allDocuments.length > 0 && (
           <button
@@ -541,7 +541,7 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
       {allDocuments.length > 0 && (
         <div className="flex items-center justify-between mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <div className="text-sm text-blue-700 dark:text-blue-300">
-            <strong>{allDocuments.length}</strong> documents across <strong>{agenda.length}</strong> agenda items
+            <strong>{allDocuments.length}</strong> attachments across <strong>{agenda.length}</strong> agenda items
           </div>
           <div className="text-sm text-blue-600 dark:text-blue-400">
             Page {currentPage + 1} of {totalPages}
@@ -597,9 +597,9 @@ const AgendaDocumentViewer: React.FC<AgendaDocumentViewerProps> = ({
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
               <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">No documents available</p>
+              <p className="text-gray-500 dark:text-gray-400">No attachments available</p>
               <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                Documents will appear here once added to agenda items
+                Attchments will appear here once added to agenda items
               </p>
             </div>
           </div>

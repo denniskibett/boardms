@@ -1,6 +1,7 @@
+// src/components/meetings/SingleMeeting.tsx
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   XCircle,
@@ -113,6 +114,7 @@ interface AgendaDocument {
 interface SystemSettings {
   timezone: string;
   date_format: string;
+  time_format: '12' | '24';
 }
 
 interface DocumentContent {
@@ -125,13 +127,16 @@ interface DocumentContent {
   currentPage: number;
 }
 
-const SingleMeeting: React.FC = () => {
-  const params = useParams();
+interface SingleMeetingProps {
+  meetingId: string;
+  settings?: SystemSettings;
+}
+
+const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: propSettings }) => {
   const router = useRouter();
-  const meetingId = params.id as string;
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
-  const [participants, setParticipants] = useState<any[]>([]); // Separate participants state
+  const [participants, setParticipants] = useState<any[]>([]);
   const [agenda, setAgenda] = useState<Agenda[]>([]);
   const [selectedAgenda, setSelectedAgenda] = useState<Agenda | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -154,6 +159,13 @@ const SingleMeeting: React.FC = () => {
   const [isParticipantsSlideOverOpen, setIsParticipantsSlideOverOpen] = useState(false);
   const [isAgendaSlideOverOpen, setIsAgendaSlideOverOpen] = useState(false);
 
+  // System settings with defaults
+  const settings = {
+    timezone: propSettings?.timezone || 'Africa/Nairobi',
+    date_format: propSettings?.date_format || 'DD/MM/YYYY',
+    time_format: propSettings?.time_format || '24'
+  };
+
   // Get all documents from all agenda items
   const allDocuments = agenda.flatMap(agendaItem => agendaItem.documents || []);
 
@@ -162,7 +174,6 @@ const SingleMeeting: React.FC = () => {
     console.log('🔄 Updating participants in parent:', updatedParticipants.length);
     setParticipants(updatedParticipants);
     
-    // Also update the meeting object to keep consistency
     if (meeting) {
       setMeeting(prev => prev ? {
         ...prev,
@@ -186,7 +197,7 @@ const SingleMeeting: React.FC = () => {
     }
   }, [meetingId]);
 
-  // Fetch meeting data with stable state management
+  // Fetch meeting data
   useEffect(() => {
     const abortController = new AbortController();
     
@@ -215,14 +226,11 @@ const SingleMeeting: React.FC = () => {
         
         setMeeting(meetingData);
         
-        // Set participants from meeting data if available
         if (meetingData.participants) {
           setParticipants(meetingData.participants);
         }
         
-        // Set agenda from the meeting data
         if (meetingData.agenda) {
-          // Fetch documents for each agenda item
           const agendaWithDocuments = await Promise.all(
             meetingData.agenda.map(async (agendaItem: Agenda) => {
               try {
@@ -240,7 +248,6 @@ const SingleMeeting: React.FC = () => {
           );
           setAgenda(agendaWithDocuments);
           
-          // Auto-select first agenda with documents
           const firstAgendaWithDocs = agendaWithDocuments.find(agenda => agenda.documents && agenda.documents.length > 0);
           if (firstAgendaWithDocs) {
             setSelectedAgenda(firstAgendaWithDocs);
@@ -252,7 +259,6 @@ const SingleMeeting: React.FC = () => {
         }
 
       } catch (err) {
-        // Only set error if it's not an abort error
         if (err.name !== 'AbortError') {
           console.error('❌ Error fetching data:', err);
           setError(err instanceof Error ? err.message : 'Failed to load meeting');
@@ -264,7 +270,6 @@ const SingleMeeting: React.FC = () => {
 
     fetchData();
 
-    // Cleanup function to abort fetch if component unmounts
     return () => {
       abortController.abort();
     };
@@ -297,7 +302,6 @@ const SingleMeeting: React.FC = () => {
           });
         } catch (error) {
           console.error('❌ Failed to convert document:', document.name, error);
-          // Add fallback content
           contents.push({
             id: document.id,
             agendaId: selectedAgenda.id,
@@ -329,7 +333,6 @@ const SingleMeeting: React.FC = () => {
   const convertToHTML = async (document: AgendaDocument): Promise<string> => {
     const fileExtension = document.name.split('.').pop()?.toLowerCase() || '';
     
-    // For images
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(fileExtension)) {
       return `
         <div class="image-document">
@@ -341,17 +344,14 @@ const SingleMeeting: React.FC = () => {
       `;
     }
 
-    // For PDF files - using PDF.js
     if (fileExtension === 'pdf') {
       return await convertPDFToHTML(document);
     }
 
-    // For Word documents - using Mammoth.js
     if (['doc', 'docx'].includes(fileExtension)) {
       return await convertWordToHTML(document);
     }
 
-    // For Excel files
     if (['xls', 'xlsx'].includes(fileExtension)) {
       return `
         <div class="excel-fallback">
@@ -362,7 +362,6 @@ const SingleMeeting: React.FC = () => {
       `;
     }
 
-    // For PowerPoint files
     if (['ppt', 'pptx'].includes(fileExtension)) {
       return `
         <div class="powerpoint-fallback">
@@ -373,7 +372,6 @@ const SingleMeeting: React.FC = () => {
       `;
     }
 
-    // For text files
     if (['txt', 'md'].includes(fileExtension)) {
       try {
         const response = await fetch(document.file_url);
@@ -388,7 +386,6 @@ const SingleMeeting: React.FC = () => {
       }
     }
 
-    // Default fallback
     return `
       <div class="unknown-format">
         <h3>${document.name}</h3>
@@ -401,7 +398,6 @@ const SingleMeeting: React.FC = () => {
   // Convert PDF to HTML using PDF.js
   const convertPDFToHTML = async (document: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // Dynamically import PDF.js
       import('pdfjs-dist').then(pdfjsLib => {
         pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js`;
 
@@ -411,7 +407,6 @@ const SingleMeeting: React.FC = () => {
           htmlContent += `<h3>${document.name}</h3>`;
           htmlContent += `<div class="pdf-pages">`;
 
-          // Only render first few pages for performance
           const pageCount = Math.min(pdf.numPages, 10);
           const pagePromises = [];
 
@@ -479,19 +474,17 @@ const SingleMeeting: React.FC = () => {
   const refreshMeetingData = async () => {
     try {
       console.log('🔄 Refreshing meeting data...');
-      const meetingResponse = await fetch(`/api/meetings/${meetingId}?t=${Date.now()}`); // Cache bust
+      const meetingResponse = await fetch(`/api/meetings/${meetingId}?t=${Date.now()}`);
       
       if (meetingResponse.ok) {
         const meetingData = await meetingResponse.json();
         setMeeting(meetingData);
         
-        // Update participants from meeting data
         if (meetingData.participants) {
           setParticipants(meetingData.participants);
         }
         
         if (meetingData.agenda) {
-          // Fetch documents for each agenda item with error handling
           const agendaWithDocuments = await Promise.all(
             meetingData.agenda.map(async (agendaItem: Agenda) => {
               try {
@@ -509,7 +502,6 @@ const SingleMeeting: React.FC = () => {
           );
           setAgenda(agendaWithDocuments);
           
-          // Update selected agenda if it exists
           if (selectedAgenda) {
             const updatedSelected = agendaWithDocuments.find(a => a.id === selectedAgenda.id);
             if (updatedSelected) {
@@ -581,7 +573,6 @@ const SingleMeeting: React.FC = () => {
     const newAgenda = agenda[newIndex];
     setSelectedAgenda(newAgenda);
     
-    // If document viewer is open, reset to first document of new agenda
     if (isDocumentViewerOpen) {
       setCurrentContentIndex(0);
     }
@@ -625,13 +616,11 @@ const SingleMeeting: React.FC = () => {
       const matches = text.match(regex);
       
       if (matches) {
-        // Highlight matches (simplified implementation)
         const highlightedContent = documentContents[currentContentIndex].htmlContent.replace(
           regex, 
           match => `<mark class="search-highlight">${match}</mark>`
         );
         
-        // Create a temporary element to update the content
         const tempElement = document.createElement('div');
         tempElement.innerHTML = highlightedContent;
         contentElement.innerHTML = tempElement.innerHTML;
@@ -713,7 +702,7 @@ const SingleMeeting: React.FC = () => {
   };
 
   const handleDelete = async () => {
-    if (!meeting || !confirm('Are you sure you want to delete this meeting? This will also delete all associated agenda and documents. This action cannot be undone.')) {
+    if (!meeting || !confirm('Are you sure you want to delete this meeting? This will also delete all associated agenda and attachments. This action cannot be undone.')) {
       return;
     }
 
@@ -745,17 +734,14 @@ const SingleMeeting: React.FC = () => {
   const handleAgendaUpdate = (updatedAgenda: Agenda) => {
     console.log('🔄 Updating agenda in state:', updatedAgenda);
     
-    // Update agenda list
     setAgenda(prev => prev.map(agendaItem => 
       agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
     ));
     
-    // Update selected agenda if it's the one being edited
     if (selectedAgenda?.id === updatedAgenda.id) {
       setSelectedAgenda(updatedAgenda);
     }
     
-    // Also update the meeting data
     if (meeting) {
       setMeeting(prev => prev ? {
         ...prev,
@@ -779,15 +765,15 @@ const SingleMeeting: React.FC = () => {
     {
       id: 'agenda',
       title: 'Add Agenda Item',
-      description: 'Create new agenda items and upload documents',
+      description: 'Create new agenda items and upload attachments',
       icon: BookOpen,
       color: 'green',
       onClick: () => setIsAgendaSlideOverOpen(true)
     },
     {
       id: 'documents',
-      title: 'View Documents',
-      description: 'Browse all meeting documents',
+      title: 'View Attachments',
+      description: 'Browse all meeting attachments',
       icon: File,
       color: 'purple',
       onClick: () => {
@@ -806,14 +792,14 @@ const SingleMeeting: React.FC = () => {
     const currentContent = documentContents[currentContentIndex];
 
     return (
-      <div className="fixed inset-0 z-50 flex bg-white dark:bg-gray-900">
-        {/* Left Panel - Meeting & Agenda Info (30%) */}
+      <div className="fixed inset-0 z-99999 flex bg-white dark:bg-gray-900">
+        {/* Left Panel - Meeting & Agenda Info */}
         <div className="w-1/3 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           {/* Header */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Meeting Documents
+                Meeting attachments
               </h2>
               <button
                 onClick={closeDocumentViewer}
@@ -912,7 +898,7 @@ const SingleMeeting: React.FC = () => {
           <div className="border-t border-gray-200 dark:border-gray-700">
             <div className="p-4">
               <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                Documents in this Agenda ({documentContents.length})
+                attachments in this Agenda ({documentContents.length})
               </h4>
               <div className="space-y-2">
                 {documentContents.map((content, index) => (
@@ -950,7 +936,7 @@ const SingleMeeting: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Panel - Document Content (70%) */}
+        {/* Right Panel - Document Content */}
         <div className="flex-1 flex flex-col">
           {/* Document Header */}
           <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -1083,7 +1069,7 @@ const SingleMeeting: React.FC = () => {
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Use ↑↓ arrows to navigate agendas • ←→ arrows to navigate documents
+                Use ↑↓ arrows to navigate agendas • ←→ arrows to navigate attachments
               </div>
               
               {documentContents.length > 1 && (
@@ -1171,11 +1157,11 @@ const SingleMeeting: React.FC = () => {
         </nav>
       </div>
 
-      {/* Meeting Details */}
-      <MeetingDetails meeting={meeting} onEdit={handleEdit} />
+      {/* Meeting Details - Pass settings */}
+      <MeetingDetails meeting={meeting} onEdit={handleEdit} settings={settings} />
 
-      {/* Meeting Invitees */}
-      <MeetingInvitees meeting={meeting} />
+      {/* Meeting Invitees - Pass settings */}
+      <MeetingInvitees meeting={meeting} settings={settings} />
 
       {/* Action Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -1219,7 +1205,7 @@ const SingleMeeting: React.FC = () => {
                   </p>
                   {card.disabled && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      No documents available
+                      No attachments available
                     </p>
                   )}
                 </div>
@@ -1237,7 +1223,7 @@ const SingleMeeting: React.FC = () => {
 
       {/* Participants Slide-over */}
       {isParticipantsSlideOverOpen && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
+        <div className="fixed inset-0 z-99999 overflow-hidden">
           <div className="absolute inset-0 overflow-hidden">
             {/* Background overlay */}
             <div 
@@ -1278,6 +1264,13 @@ const SingleMeeting: React.FC = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Footer with timezone info */}
+                  <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1297,8 +1290,6 @@ const SingleMeeting: React.FC = () => {
 
       {/* Document Viewer */}
       {renderDocumentViewer()}
-
-    
 
       {/* Add CSS for document styling */}
       <style jsx global>{`

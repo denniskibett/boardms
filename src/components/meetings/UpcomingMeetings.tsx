@@ -1,7 +1,9 @@
+// src/components/meetings/UpcomingMeetings.tsx
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import TodayMeetings from './TodayMeetings';
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 interface Meeting {
   id: string;
@@ -21,38 +23,130 @@ interface GroupedMeetings {
   [key: string]: Meeting[];
 }
 
-export default function UpcomingMeetings() {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
+interface UpcomingMeetingsProps {
+  meetings?: Meeting[];
+  pastMeetings?: Meeting[];
+  allMeetings?: Meeting[];
+  loading?: boolean;
+  onEdit?: (meeting: Meeting) => void;
+  onRefresh?: () => void;
+  settings?: {
+    timezone: string;
+    date_format: string;
+    time_format: '12' | '24';
+  };
+  meetingTypes?: string[]; // ['cabinet', 'committee']
+  userRole?: string;
+}
 
+// Role-based meeting type access
+const roleMeetingAccess: Record<string, string[]> = {
+  president: ['cabinet', 'committee'],
+  deputy_president: ['cabinet', 'committee'],
+  prime_cabinet_secretary: ['cabinet', 'committee'],
+  cabinet_secretariat: ['cabinet', 'committee'],
+  attorney_general: ['cabinet', 'committee'],
+  cabinet_secretary: ['cabinet', 'committee'],
+  principal_secretary: ['cabinet', 'committee'],
+  director: ['committee'],
+  assistant_director: ['committee'],
+  co_officer: ['cabinet', 'committee'],
+  sysadmin: [],
+  admin: [],
+};
+
+export default function UpcomingMeetings({ 
+  meetings: propMeetings,
+  pastMeetings: propPastMeetings,
+  allMeetings: propAllMeetings,
+  loading: externalLoading = false,
+  onEdit,
+  onRefresh,
+  settings: propSettings,
+  meetingTypes: propMeetingTypes,
+  userRole: propUserRole
+}: UpcomingMeetingsProps) {
+  const { data: session } = useSession();
+  const [internalMeetings, setInternalMeetings] = useState<Meeting[]>([]);
+  const [internalLoading, setInternalLoading] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'upcoming' | 'past'>('upcoming');
+  
+  // Determine user role
+  const userRole = propUserRole || session?.user?.role?.toLowerCase().replace(/\s+/g, '_') || '';
+  
+  // Get allowed meeting types based on role
+  const allowedMeetingTypes = propMeetingTypes || roleMeetingAccess[userRole] || ['cabinet', 'committee'];
+  
+  // Determine if we're using external props or internal fetching
+  const isUsingExternalData = !!(propAllMeetings || propMeetings);
+  
+  // Fetch meetings internally if no props provided
   useEffect(() => {
-    fetchMeetings();
-  }, []);
+    if (!isUsingExternalData) {
+      fetchMeetings();
+    }
+  }, [isUsingExternalData]);
 
   const fetchMeetings = async () => {
     try {
-      setLoading(true);
+      setInternalLoading(true);
       const response = await fetch('/api/meetings');
       const result = await response.json();
       
-      console.log('Meetings API response:', result);
+      console.log('UpcomingMeetings - Internal fetch response:', result);
       
       if (Array.isArray(result)) {
-        setMeetings(result);
+        setInternalMeetings(result);
       } else {
         console.error('Meetings API did not return an array:', result);
-        setMeetings([]);
+        setInternalMeetings([]);
       }
     } catch (error) {
       console.error('Error fetching meetings:', error);
-      setMeetings([]);
+      setInternalMeetings([]);
     } finally {
-      setLoading(false);
+      setInternalLoading(false);
     }
   };
 
-  // Safe filter function with array check
+  // Use either external props or internal data, then filter by allowed meeting types
+  const meetings = useMemo(() => {
+    let sourceMeetings = [];
+    if (propAllMeetings) sourceMeetings = propAllMeetings;
+    else if (propMeetings) sourceMeetings = propMeetings;
+    else sourceMeetings = internalMeetings;
+    
+    // Filter meetings based on user's role
+    if (allowedMeetingTypes.length === 0) {
+      return [];
+    }
+    
+    return sourceMeetings.filter(meeting => 
+      allowedMeetingTypes.includes(meeting.type?.toLowerCase() || '')
+    );
+  }, [propAllMeetings, propMeetings, internalMeetings, allowedMeetingTypes]);
+
+  const loading = externalLoading || internalLoading;
+
+  // Check if user can view meetings
+  const canViewMeetings = allowedMeetingTypes.length > 0;
+
+  if (!canViewMeetings) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="p-6 text-center">
+          <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">🔒</div>
+          <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            No Meeting Access
+          </h4>
+          <p className="text-gray-600 dark:text-gray-400">
+            Your role does not have access to view meetings.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const filterMeetings = () => {
     const now = new Date();
     
@@ -169,7 +263,6 @@ export default function UpcomingMeetings() {
     
     if (upcomingMeetings.length === 0) return null;
     
-    // Return the earliest upcoming meeting
     return upcomingMeetings.sort((a, b) => 
       new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
     )[0];
@@ -179,14 +272,24 @@ export default function UpcomingMeetings() {
   const groupedMeetings = groupMeetingsByMonthYear(filteredMeetings);
   const nextMeeting = getNextOrCurrentMeeting(filteredMeetings);
 
+  // Get title based on meeting types
+  const getTitle = () => {
+    if (allowedMeetingTypes.includes('cabinet') && allowedMeetingTypes.includes('committee')) {
+      return 'Cabinet & Committee Meetings';
+    } else if (allowedMeetingTypes.includes('cabinet')) {
+      return 'Cabinet Meetings';
+    } else if (allowedMeetingTypes.includes('committee')) {
+      return 'Committee Meetings';
+    }
+    return 'Meetings';
+  };
+
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          
-          
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-            Upcoming Meetings
+            {getTitle()}
           </h3>
         </div>
         <div className="p-6">
@@ -204,20 +307,20 @@ export default function UpcomingMeetings() {
   }
 
   return (
-    
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
       {/* Header */}
-      <Link href={`/meetings/${nextMeeting ? nextMeeting.id : ''}`}>
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <TodayMeetings meetings={meetings} />
-      </div>
-      </Link>
-      
+      {nextMeeting && (
+        <Link href={`/meetings/${nextMeeting.id}`}>
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <TodayMeetings meetings={meetings} />
+          </div>
+        </Link>
+      )}
 
       <div className="p-6 border-b border-gray-200 dark:border-gray-700">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Cabinet Meetings
+            {getTitle()}
           </h3>
           
           {/* Filter Buttons */}
@@ -255,7 +358,6 @@ export default function UpcomingMeetings() {
           </div>
         </div>
 
-        
         {/* Summary Stats */}
         <div className="flex gap-6 mt-4">
           <div className="text-center">
@@ -293,16 +395,16 @@ export default function UpcomingMeetings() {
           <div className="text-center py-12">
             <div className="text-gray-400 dark:text-gray-500 text-6xl mb-4">📅</div>
             <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              No meetings found
+              No {getTitle().toLowerCase()} found
             </h4>
             <p className="text-gray-600 dark:text-gray-400">
               {!Array.isArray(meetings) 
                 ? "Error loading meetings" 
                 : selectedFilter === 'upcoming' 
-                ? "No upcoming meetings scheduled."
+                ? `No upcoming ${getTitle().toLowerCase()} scheduled.`
                 : selectedFilter === 'past'
-                ? "No past meetings found."
-                : "No meetings found."
+                ? `No past ${getTitle().toLowerCase()} found.`
+                : `No ${getTitle().toLowerCase()} found.`
               }
             </p>
           </div>
@@ -315,98 +417,96 @@ export default function UpcomingMeetings() {
                   Next Meeting
                 </h4>
                 <Link href={`/meetings/${nextMeeting.id}`}>
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
-                  <div className="flex flex-col lg:flex-row gap-6">
-                    {/* Date Box */}
-                    <div className="flex-shrink-0">
-                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 text-center min-w-[80px]">
-                        <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {formatMeetingTime(nextMeeting.start_at).day}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-xl p-6 hover:shadow-lg transition-all duration-200">
+                    {/* Meeting card content remains the same */}
+                    <div className="flex flex-col lg:flex-row gap-6">
+                      <div className="flex-shrink-0">
+                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4 text-center min-w-[80px]">
+                          <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {formatMeetingTime(nextMeeting.start_at).day}
+                          </div>
+                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
+                            {formatMeetingTime(nextMeeting.start_at).month}
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                            {formatMeetingTime(nextMeeting.start_at).weekday}
+                          </div>
                         </div>
-                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 uppercase">
-                          {formatMeetingTime(nextMeeting.start_at).month}
-                        </div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                          {formatMeetingTime(nextMeeting.start_at).weekday}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Meeting Details */}
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-4">
-                        <h4 className="text-xl font-bold text-gray-900 dark:text-white">
-                          {nextMeeting.name}
-                        </h4>
-                        <span className="px-3 py-1 text-sm font-bold bg-green-500 text-white rounded-full">
-                          {getMeetingStatus(nextMeeting.start_at).label}
-                        </span>
                       </div>
                       
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <div className="flex items-center gap-2 text-base font-medium text-gray-700 dark:text-gray-300">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
-                            </svg>
-                            <span>{formatMeetingTime(nextMeeting.start_at).date}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-base font-medium text-gray-700 dark:text-gray-300">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
-                            </svg>
-                            <span>{formatMeetingTime(nextMeeting.start_at).time}</span>
-                          </div>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between mb-4">
+                          <h4 className="text-xl font-bold text-gray-900 dark:text-white">
+                            {nextMeeting.name}
+                          </h4>
+                          <span className={`px-3 py-1 text-sm font-bold rounded-full ${getMeetingStatus(nextMeeting.start_at).class}`}>
+                            {getMeetingStatus(nextMeeting.start_at).label}
+                          </span>
                         </div>
                         
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <div className="flex items-center gap-2 text-base text-gray-700 dark:text-gray-300">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-                            </svg>
-                            <span className="font-medium">{nextMeeting.location}</span>
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-4 flex-wrap">
+                            <div className="flex items-center gap-2 text-base font-medium text-gray-700 dark:text-gray-300">
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
+                              </svg>
+                              <span>{formatMeetingTime(nextMeeting.start_at).date}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-base font-medium text-gray-700 dark:text-gray-300">
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
+                              </svg>
+                              <span>{formatMeetingTime(nextMeeting.start_at).time}</span>
+                            </div>
                           </div>
                           
-                          {nextMeeting.attendees_count && (
+                          <div className="flex items-center gap-4 flex-wrap">
                             <div className="flex items-center gap-2 text-base text-gray-700 dark:text-gray-300">
                               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
+                                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
                               </svg>
-                              <span className="font-medium">{nextMeeting.attendees_count} attendees</span>
+                              <span className="font-medium">{nextMeeting.location}</span>
                             </div>
+                            
+                            {nextMeeting.attendees_count && (
+                              <div className="flex items-center gap-2 text-base text-gray-700 dark:text-gray-300">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/>
+                                </svg>
+                                <span className="font-medium">{nextMeeting.attendees_count} attendees</span>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {nextMeeting.description && (
+                            <p className="text-gray-700 dark:text-gray-300 mt-3 leading-relaxed">
+                              {nextMeeting.description}
+                            </p>
                           )}
                         </div>
                         
-                        {nextMeeting.description && (
-                          <p className="text-gray-700 dark:text-gray-300 mt-3 leading-relaxed">
-                            {nextMeeting.description}
-                          </p>
-                        )}
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2 mt-4">
-                        <span 
-                          className="px-3 py-1 text-sm font-bold text-white rounded-full"
-                          style={{ backgroundColor: nextMeeting.colour || '#3B82F6' }}
-                        >
-                          {nextMeeting.type}
-                        </span>
-                        {nextMeeting.committee && (
-                          <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
-                            {nextMeeting.committee}
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <span 
+                            className="px-3 py-1 text-sm font-bold text-white rounded-full"
+                            style={{ backgroundColor: nextMeeting.colour || '#3B82F6' }}
+                          >
+                            {nextMeeting.type}
                           </span>
-                        )}
+                          {nextMeeting.committee && (
+                            <span className="px-3 py-1 text-sm font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
+                              {nextMeeting.committee}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
                 </Link>
               </div>
             )}
 
             {/* Other Meetings */}
             {Object.entries(groupedMeetings).map(([monthYear, monthMeetings]) => {
-              // Filter out the next meeting from the regular list if it exists
               const regularMeetings = nextMeeting 
                 ? monthMeetings.filter(meeting => meeting.id !== nextMeeting.id)
                 : monthMeetings;
@@ -415,15 +515,12 @@ export default function UpcomingMeetings() {
 
               return (
                 <div key={monthYear} className="space-y-4">
-                  {/* Month Header */}
                   <div className="sticky top-0 bg-white dark:bg-gray-800 py-2 z-10">
                     <h4 className="text-lg font-bold text-gray-900 dark:text-white border-l-4 border-blue-500 pl-3">
                       {monthYear}
                     </h4>
                   </div>
 
-                  {/* Regular Meetings */}
-                  
                   <div className="space-y-4">
                     {regularMeetings.map((meeting) => {
                       const { date, time, day, month, weekday } = formatMeetingTime(meeting.start_at);
@@ -432,7 +529,6 @@ export default function UpcomingMeetings() {
                       return (
                         <Link href={`/meetings/${meeting.id}`} key={meeting.id}>
                           <div
-                            key={meeting.id}
                             className="group p-5 border-2 border-gray-100 dark:border-gray-700 rounded-xl hover:border-blue-300 dark:hover:border-blue-600 transition-all duration-200 bg-white dark:bg-gray-800 hover:shadow-md"
                             style={{
                               borderLeftColor: meeting.colour || '#3B82F6',
@@ -440,7 +536,6 @@ export default function UpcomingMeetings() {
                             }}
                           >
                             <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-                              {/* Date Box */}
                               <div className="flex-shrink-0">
                                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-3 text-center min-w-[70px]">
                                   <div className="text-lg font-bold text-gray-900 dark:text-white">

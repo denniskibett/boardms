@@ -1,6 +1,19 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { Edit, MoreVertical, FileText, File, Image, FileSpreadsheet, FilePresentation, Trash2, User, Building } from 'lucide-react';
+import { 
+  Edit, 
+  MoreVertical, 
+  FileText, 
+  File, 
+  Image, 
+  FileSpreadsheet, 
+  Presentation,
+  FileSpreadsheet as FileCsv,
+  Trash2, 
+  User, 
+  Building,
+  FileType
+} from 'lucide-react';
 
 interface Document {
   id: string;
@@ -8,7 +21,7 @@ interface Document {
   url: string;
   pages: number;
   type: 'pdf' | 'doc' | 'image' | 'text' | 'docx' | 'ppt' | 'pptx' | 'xls' | 'xlsx' | 'csv';
-  size?: string; // Added for file size
+  size?: string;
 }
 
 interface AgendaItem {
@@ -24,8 +37,8 @@ interface AgendaItem {
   meeting_id?: number;
   status?: string;
   ministry_name?: string;
-  ministry_co_sponsors?: string[]; // Added for co-sponsors
-  presenter_name?: string; // Added for presenter
+  ministry_co_sponsors?: string[];
+  presenter_name?: string;
   presenter_id?: number;
   ministry_id?: number;
   cabinet_approval_required?: boolean;
@@ -52,14 +65,16 @@ interface AgendaManagerProps {
   onPageChange: (page: number) => void; 
 }
 
-// File type icon mapping
+// File type icon mapping with proper Lucide icons
 const getFileIcon = (fileType: string) => {
   const type = fileType.toLowerCase();
   if (type.includes('pdf')) return <FileText className="h-4 w-4 text-red-500" />;
-  if (type.includes('doc')) return <FileText className="h-4 w-4 text-blue-500" />;
-  if (type.includes('image')) return <Image className="h-4 w-4 text-green-500" />;
-  if (type.includes('sheet') || type.includes('excel')) return <FileSpreadsheet className="h-4 w-4 text-green-600" />;
-  if (type.includes('presentation') || type.includes('powerpoint')) return <FilePresentation className="h-4 w-4 text-orange-500" />;
+  if (type.includes('doc') || type.includes('word')) return <FileText className="h-4 w-4 text-blue-500" />;
+  if (type.includes('image') || type.includes('jpg') || type.includes('png') || type.includes('gif')) return <Image className="h-4 w-4 text-green-500" />;
+  if (type.includes('sheet') || type.includes('excel') || type.includes('xls')) return <FileSpreadsheet className="h-4 w-4 text-green-600" />;
+  if (type.includes('presentation') || type.includes('powerpoint') || type.includes('ppt')) return <Presentation className="h-4 w-4 text-orange-500" />;
+  if (type.includes('csv')) return <FileSpreadsheet className="h-4 w-4 text-yellow-600" />;
+  if (type.includes('text') || type.includes('txt')) return <FileType className="h-4 w-4 text-gray-500" />;
   return <File className="h-4 w-4 text-gray-500" />;
 };
 
@@ -93,7 +108,6 @@ const DeleteModal: React.FC<DeleteModalProps> = ({ isOpen, onClose, onConfirm, a
         className="relative w-full max-w-[600px] rounded-3xl bg-white p-6 dark:bg-gray-900 lg:p-10"
         onClick={e => e.stopPropagation()}
       >
-        {/* close btn */}
         <button
           onClick={onClose}
           className="absolute right-3 top-3 z-999 flex h-9.5 w-9.5 items-center justify-center rounded-full bg-gray-100 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white sm:right-6 sm:top-6 sm:h-11 sm:w-11"
@@ -257,7 +271,7 @@ const OverviewModal: React.FC<OverviewModalProps> = ({ isOpen, onClose, agenda }
             
             {agenda.presenter_name && (
               <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-1">Presenter</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-1">Sponsor</h5>
                 <p className="text-sm text-gray-900">{agenda.presenter_name}</p>
               </div>
             )}
@@ -277,7 +291,7 @@ const OverviewModal: React.FC<OverviewModalProps> = ({ isOpen, onClose, agenda }
             
             {agenda.documents && agenda.documents.length > 0 && (
               <div>
-                <h5 className="text-sm font-medium text-gray-700 mb-1">Documents</h5>
+                <h5 className="text-sm font-medium text-gray-700 mb-1">Attachments</h5>
                 <p className="text-sm text-gray-900">{agenda.documents.length} attached</p>
               </div>
             )}
@@ -310,6 +324,7 @@ export default function AgendaManager({
   const [agendaToDelete, setAgendaToDelete] = useState<{id: string, title: string} | null>(null);
   const [agendaToView, setAgendaToView] = useState<AgendaItem | null>(null);
   const agendaContainerRef = useRef<HTMLDivElement>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Sync local agendas with props
   useEffect(() => {
@@ -353,7 +368,11 @@ export default function AgendaManager({
     setCurrentAgendaIndex(prev => {
       const newIndex = Math.max(0, Math.min(localAgendas.length - 1, prev + direction));
       
-      setTimeout(() => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      
+      scrollTimeoutRef.current = setTimeout(() => {
         const agendaElement = document.getElementById(`agenda-${newIndex}`);
         if (agendaElement && agendaContainerRef.current) {
           agendaElement.scrollIntoView({ 
@@ -434,17 +453,10 @@ export default function AgendaManager({
     handleShowDetails(agenda);
   };
 
-  // Enhanced Drag and Drop handlers with sort_order update
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData('text/plain', index.toString());
     e.dataTransfer.effectAllowed = 'move';
     setDragIndex(index);
-    
-    setTimeout(() => {
-      if (e.target instanceof HTMLElement) {
-        e.target.classList.add('opacity-50');
-      }
-    }, 0);
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
@@ -479,7 +491,6 @@ export default function AgendaManager({
     const [movedAgenda] = reorderedAgendas.splice(dragIndex, 1);
     reorderedAgendas.splice(dropIndex, 0, movedAgenda);
 
-    // Update sort_order for all agendas
     const updatedAgendas = reorderedAgendas.map((agenda, index) => ({
       ...agenda,
       order: index + 1,
@@ -488,12 +499,10 @@ export default function AgendaManager({
 
     setLocalAgendas(updatedAgendas);
 
-    // Update sort_order in database for all reordered agendas
     if (onReorderAgendas) {
       onReorderAgendas(updatedAgendas);
     }
 
-    // Also update each agenda individually
     updatedAgendas.forEach((agenda) => {
       onUpdateAgenda(agenda.id, { 
         order: agenda.order,
@@ -507,10 +516,6 @@ export default function AgendaManager({
   const handleDragEnd = (e: React.DragEvent) => {
     e.preventDefault();
     resetDragState();
-    
-    if (e.target instanceof HTMLElement) {
-      e.target.classList.remove('opacity-50');
-    }
   };
 
   const resetDragState = () => {
@@ -538,7 +543,6 @@ export default function AgendaManager({
   const handleAgendaClick = (agenda: AgendaItem, index: number) => {
     setCurrentAgendaIndex(index);
     
-    // If agenda has documents, navigate to the first document
     if (agenda.documents && agenda.documents.length > 0 && onAgendaItemClick) {
       const firstDocument = agenda.documents[0];
       const documentIndex = documents.findIndex(doc => 
@@ -553,7 +557,6 @@ export default function AgendaManager({
   };
 
   const handleDocumentClick = (agenda: AgendaItem, document: any) => {
-    // Find the document in the main documents array and trigger view
     if (onAgendaItemClick) {
       const documentIndex = documents.findIndex(doc => 
         doc.id === document.id.toString() || 
@@ -575,7 +578,7 @@ export default function AgendaManager({
           {localAgendas.length} agenda item{localAgendas.length !== 1 ? 's' : ''}
         </p>
         <div className="mt-2 text-xs text-gray-500">
-          Use ↑↓ arrows to navigate • Click agenda to view documents
+          Use ↑↓ arrows to navigate • Click agenda to view Attachments
         </div>
       </div>
 
@@ -633,7 +636,7 @@ export default function AgendaManager({
       {/* Agenda List */}
       <div 
         ref={agendaContainerRef}
-        className="flex-1 overflow-y-auto space-y-3"
+        className="flex-1 overflow-y-auto space-y-3 scroll-smooth"
         style={{ maxHeight: 'none' }}
       >
         {localAgendas.map((agenda, index) => {
@@ -788,58 +791,57 @@ export default function AgendaManager({
                             <span className={`text-xs font-medium ${
                               isCurrent ? 'text-blue-600' : 'text-gray-700'
                             }`}>
-                              Documents ({agenda.documents!.length})
+                              Attachments ({agenda.documents!.length})
                             </span>
                           </div>
                           
-                         <div className="space-y-1">
-  {agenda.documents!.map((doc, docIndex) => {
-    const fileType = doc.file_type || doc.type || doc.format || 'unknown';
-    const fileName = doc.name || doc.file_name || 'Unnamed Document';
-    const fileSize = doc.file_size
-      ? formatFileSize(
-          typeof doc.file_size === 'number' ? doc.file_size : undefined
-        )
-      : 'Unknown size';
-    const fileExtension =
-      fileType?.split('/').pop()?.toUpperCase() ||
-      fileName.split('.').pop()?.toUpperCase() ||
-      'UNKNOWN';
+                          <div className="space-y-1">
+                            {agenda.documents!.map((doc, docIndex) => {
+                              const fileType = doc.file_type || doc.type || doc.format || 'unknown';
+                              const fileName = doc.name || doc.file_name || 'Unnamed Document';
+                              const fileSize = doc.file_size
+                                ? formatFileSize(
+                                    typeof doc.file_size === 'number' ? doc.file_size : undefined
+                                  )
+                                : 'Unknown size';
+                              const fileExtension =
+                                fileType?.split('/').pop()?.toUpperCase() ||
+                                fileName.split('.').pop()?.toUpperCase() ||
+                                'UNKNOWN';
 
-    return (
-      <div
-        key={doc.id || docIndex}
-        onClick={(e) => {
-          e.stopPropagation();
-          handleDocumentClick(agenda, doc);
-        }}
-        className={`flex items-center space-x-2 p-2 rounded text-xs cursor-pointer ${
-          isCurrent
-            ? 'bg-blue-100/50 hover:bg-blue-100'
-            : 'bg-gray-50 hover:bg-gray-100'
-        }`}
-      >
-        {/* File Icon (picked from file_type) */}
-        {getFileIcon(fileType)}
+                              return (
+                                <div
+                                  key={doc.id || docIndex}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDocumentClick(agenda, doc);
+                                  }}
+                                  className={`flex items-center space-x-2 p-2 rounded text-xs cursor-pointer ${
+                                    isCurrent
+                                      ? 'bg-blue-100/50 hover:bg-blue-100'
+                                      : 'bg-gray-50 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {/* File Icon (picked from file_type) */}
+                                  {getFileIcon(fileType)}
 
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-gray-800 truncate">
-            {fileName}
-          </p>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-800 truncate">
+                                      {fileName}
+                                    </p>
 
-          <div className="flex items-center space-x-2 text-gray-500">
-            <span className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">
-              {fileExtension}
-            </span>
+                                    <div className="flex items-center space-x-2 text-gray-500">
+                                      <span className="px-1 py-0.5 bg-gray-200 rounded text-[10px]">
+                                        {fileExtension}
+                                      </span>
 
-            <span className="text-[10px]">{fileSize}</span>
-          </div>
-        </div>
-      </div>
-    );
-  })}
-</div>
-
+                                      <span className="text-[10px]">{fileSize}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </>

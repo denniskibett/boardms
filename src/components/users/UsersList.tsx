@@ -1,4 +1,3 @@
-// src/app/users/page.tsx
 "use client";
 import React, { useState, useEffect } from "react";
 import { useUser } from "@/hooks/useUser";
@@ -22,6 +21,7 @@ interface AuthUser {
   phone?: string;
   ministry_name?: string;
 }
+
 
 // Define specific types for roles and statuses with proper hierarchy
 type UserRole = 
@@ -186,6 +186,8 @@ function UserAvatar({ user }: { user: AuthUser }) {
     </div>
   );
 }
+
+
 
 // Main component with error boundary
 export default function UsersList() {

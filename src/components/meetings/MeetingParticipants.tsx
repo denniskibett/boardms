@@ -1,3 +1,4 @@
+// src/components/meetings/MeetingParticipants.tsx
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
@@ -11,9 +12,12 @@ import {
   X,
   UsersIcon,
   RefreshCw,
-  UserMinus,
-  HelpCircle
+  HelpCircle,
+  CheckCircle,
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
+import { useMeetingsData } from '@/hooks/useMeetingsData';
 
 interface User {
   id: string;
@@ -59,14 +63,130 @@ interface MeetingParticipantsProps {
   onParticipantsUpdate?: (participants: any[]) => void;
   onRefresh?: () => void;
   compact?: boolean;
+  settings?: {
+    timezone: string;
+    date_format: string;
+    time_format: '12' | '24';
+  };
 }
+
+// Helper function to get initials from name (first letter of first and last name)
+const getInitials = (name: string): string => {
+  if (!name) return "?";
+  
+  // Handle names with commas (e.g., "Mudavadi, Musalia")
+  if (name.includes(',')) {
+    const [lastName, firstName] = name.split(',').map(s => s.trim());
+    const lastInitial = lastName.charAt(0).toUpperCase();
+    const firstInitial = firstName.charAt(0).toUpperCase();
+    return `${firstInitial}${lastInitial}`;
+  }
+  
+  // Handle regular names (e.g., "Musalia Mudavadi")
+  const words = name.trim().split(' ').filter(word => word.length > 0);
+  if (words.length >= 2) {
+    return words.slice(0, 2).map(word => word.charAt(0).toUpperCase()).join('');
+  }
+  
+  return name.charAt(0).toUpperCase();
+};
+
+// Helper function to get avatar color based on name
+const getAvatarColor = (name: string): string => {
+  const colors = [
+    'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 
+    'bg-red-500', 'bg-teal-500', 'bg-indigo-500', 'bg-pink-500',
+    'bg-yellow-500', 'bg-cyan-500', 'bg-emerald-500', 'bg-rose-500'
+  ];
+  const index = (name?.length || 0) % colors.length;
+  return colors[index];
+};
+
+// RSVP status configuration for accurate display
+const RSVP_STATUSES = {
+  ATTENDING: { 
+    label: 'Attending', 
+    color: 'bg-green-500',
+    bgLight: 'bg-green-100',
+    textLight: 'text-green-800',
+    bgDark: 'dark:bg-green-900',
+    textDark: 'dark:text-green-300',
+    icon: CheckCircle,
+    order: 1
+  },
+  DECLINED: { 
+    label: 'Declined', 
+    color: 'bg-red-500',
+    bgLight: 'bg-red-100',
+    textLight: 'text-red-800',
+    bgDark: 'dark:bg-red-900',
+    textDark: 'dark:text-red-300',
+    icon: X,
+    order: 2
+  },
+  TENTATIVE: { 
+    label: 'Tentative', 
+    color: 'bg-yellow-500',
+    bgLight: 'bg-yellow-100',
+    textLight: 'text-yellow-800',
+    bgDark: 'dark:bg-yellow-900',
+    textDark: 'dark:text-yellow-300',
+    icon: Clock,
+    order: 3
+  },
+  NO_RESPONSE: { 
+    label: 'No Response', 
+    color: 'bg-gray-500',
+    bgLight: 'bg-gray-100',
+    textLight: 'text-gray-800',
+    bgDark: 'dark:bg-gray-700',
+    textDark: 'dark:text-gray-300',
+    icon: HelpCircle,
+    order: 4
+  },
+  PENDING: { 
+    label: 'Pending', 
+    color: 'bg-blue-500',
+    bgLight: 'bg-blue-100',
+    textLight: 'text-blue-800',
+    bgDark: 'dark:bg-blue-900',
+    textDark: 'dark:text-blue-300',
+    icon: Clock,
+    order: 5
+  },
+  NOT_ATTENDING: { 
+    label: 'Not Attending', 
+    color: 'bg-orange-500',
+    bgLight: 'bg-orange-100',
+    textLight: 'text-orange-800',
+    bgDark: 'dark:bg-orange-900',
+    textDark: 'dark:text-orange-300',
+    icon: UserX,
+    order: 6
+  }
+};
+
+// Map RSVP names to status keys
+const mapRsvpToStatus = (rsvpName: string): keyof typeof RSVP_STATUSES => {
+  const lower = rsvpName?.toLowerCase() || '';
+  
+  if (lower.includes('accept') || lower.includes('attend') || lower === 'yes') return 'ATTENDING';
+  if (lower.includes('declin') || lower === 'no') return 'DECLINED';
+  if (lower.includes('tentative') || lower.includes('maybe')) return 'TENTATIVE';
+  if (lower.includes('no response') || lower.includes('none')) return 'NO_RESPONSE';
+  if (lower.includes('pending')) return 'PENDING';
+  if (lower.includes('not attend')) return 'NOT_ATTENDING';
+  
+  return 'PENDING'; // Default
+};
 
 const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({ 
   meetingId, 
   participants: initialParticipants = [],
   onParticipantsUpdate,
   onRefresh,
-  compact = false
+  compact = false,
+  settings
 }) => {
   const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
@@ -78,6 +198,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
+  const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
 
   const hasLoadedRef = useRef({
     users: false,
@@ -85,6 +206,13 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     rsvp: false,
     participants: false
   });
+
+  // Use cached data from useMeetingsData
+  const { 
+    users: cachedUsers, 
+    categories,
+    settings: cachedSettings 
+  } = useMeetingsData();
 
   // UUID validation helper
   const isValidUUID = (id: string | null | undefined): boolean => {
@@ -139,7 +267,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       });
   }, []);
 
-  // Data loading
+  // Data loading with caching
   const reloadAllData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -177,7 +305,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
       
     } catch (error: any) {
       console.error('❌ Error reloading data:', error);
-      alert(`Failed to reload data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -204,7 +331,12 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         );
       }
 
-      if (!hasLoadedRef.current.users) {
+      // Try to use cached users first
+      if (cachedUsers && cachedUsers.length > 0 && !hasLoadedRef.current.users) {
+        const validUsers = filterValidUsers(cachedUsers);
+        setAvailableUsers(validUsers);
+        hasLoadedRef.current.users = true;
+      } else if (!hasLoadedRef.current.users) {
         dataPromises.push(
           fetch('/api/users?role=all')
             .then(res => {
@@ -237,7 +369,11 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
         );
       }
 
-      if (!hasLoadedRef.current.rsvp) {
+      // Try to use cached RSVP options
+      if (categories?.decisionStatus && categories.decisionStatus.length > 0 && !hasLoadedRef.current.rsvp) {
+        setRsvpOptions(categories.decisionStatus);
+        hasLoadedRef.current.rsvp = true;
+      } else if (!hasLoadedRef.current.rsvp) {
         dataPromises.push(
           fetch('/api/categories?type=rsvp_status')
             .then(res => {
@@ -255,11 +391,10 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
 
     } catch (error: any) {
       console.error('❌ Error loading data:', error);
-      alert(`Failed to load data: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
-  }, [meetingId, initialParticipants, formatParticipants]);
+  }, [meetingId, initialParticipants, formatParticipants, cachedUsers, categories]);
 
   useEffect(() => {
     if (initialParticipants && initialParticipants.length > 0) {
@@ -458,26 +593,24 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     await reloadAllData();
   }, [onRefresh, reloadAllData]);
 
-  // Helper functions
-  const getRsvpBadge = useCallback((rsvpType: string) => {
-    const baseClasses = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
-    
-    switch (rsvpType?.toLowerCase()) {
-      case 'accepted':
-      case 'attending':
-        return `${baseClasses} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300`;
-      case 'declined':
-      case 'not attending':
-        return `${baseClasses} bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300`;
-      case 'tentative':
-        return `${baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300`;
-      case 'pending':
-      case 'no response':
-        return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300`;
-      default:
-        return `${baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300`;
-    }
+  const handleImageError = useCallback((participantId: string) => {
+    setImageErrors(prev => ({ ...prev, [participantId]: true }));
   }, []);
+
+  // Helper functions
+  const getRsvpBadge = useCallback((rsvpId: string | null) => {
+    if (!rsvpId) return RSVP_STATUSES.PENDING;
+    
+    const rsvp = rsvpOptions.find(r => r.id === rsvpId);
+    const statusKey = mapRsvpToStatus(rsvp?.name || '');
+    return RSVP_STATUSES[statusKey];
+  }, [rsvpOptions]);
+
+  const getRsvpStatusName = useCallback((rsvpId: string | null) => {
+    if (!rsvpId) return 'Pending';
+    const rsvp = rsvpOptions.find(r => r.id === rsvpId);
+    return rsvp?.name || 'Pending';
+  }, [rsvpOptions]);
 
   const getRoleBadge = useCallback((role: string) => {
     const baseClasses = "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium";
@@ -496,17 +629,6 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     }
   }, []);
 
-  const getRsvpStatusName = useCallback((rsvpId: string | null) => {
-    if (!rsvpId) return 'Pending';
-    const rsvp = rsvpOptions.find(r => r.id === rsvpId);
-    return rsvp?.name || 'Pending';
-  }, [rsvpOptions]);
-
-  const getInitials = useCallback((name: string) => {
-    if (!name) return "?";
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  }, []);
-
   const getTotalAttendeeCount = useCallback(() => {
     let count = 0;
     participants.forEach(participant => {
@@ -519,65 +641,81 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
     return count;
   }, [participants]);
 
-  // NEW: Calculate RSVP statistics
+  // Calculate RSVP statistics with proper grouping
   const getRsvpStats = useCallback(() => {
-    const stats: { [key: string]: { count: number; percentage: number; color: string } } = {};
-    
-    // Initialize all RSVP statuses
-    rsvpOptions.forEach(rsvp => {
-      stats[rsvp.name] = { count: 0, percentage: 0, color: getRsvpColor(rsvp.name) };
-    });
-    
-    // Add pending for participants without RSVP
-    stats['Pending'] = { count: 0, percentage: 0, color: getRsvpColor('Pending') };
+    // Initialize all statuses with zero counts
+    const stats: { [key in keyof typeof RSVP_STATUSES]: { 
+      count: number; 
+      percentage: number; 
+      color: string;
+      label: string;
+      icon: any;
+    } } = {
+      ATTENDING: { count: 0, percentage: 0, color: RSVP_STATUSES.ATTENDING.color, label: RSVP_STATUSES.ATTENDING.label, icon: RSVP_STATUSES.ATTENDING.icon },
+      DECLINED: { count: 0, percentage: 0, color: RSVP_STATUSES.DECLINED.color, label: RSVP_STATUSES.DECLINED.label, icon: RSVP_STATUSES.DECLINED.icon },
+      TENTATIVE: { count: 0, percentage: 0, color: RSVP_STATUSES.TENTATIVE.color, label: RSVP_STATUSES.TENTATIVE.label, icon: RSVP_STATUSES.TENTATIVE.icon },
+      NO_RESPONSE: { count: 0, percentage: 0, color: RSVP_STATUSES.NO_RESPONSE.color, label: RSVP_STATUSES.NO_RESPONSE.label, icon: RSVP_STATUSES.NO_RESPONSE.icon },
+      PENDING: { count: 0, percentage: 0, color: RSVP_STATUSES.PENDING.color, label: RSVP_STATUSES.PENDING.label, icon: RSVP_STATUSES.PENDING.icon },
+      NOT_ATTENDING: { count: 0, percentage: 0, color: RSVP_STATUSES.NOT_ATTENDING.color, label: RSVP_STATUSES.NOT_ATTENDING.label, icon: RSVP_STATUSES.NOT_ATTENDING.icon }
+    };
 
-    // Count participants for each RSVP status
+    // Count participants for each status
     participants.forEach(participant => {
       const rsvpName = getRsvpStatusName(participant.rsvp_id);
-      if (stats[rsvpName]) {
-        stats[rsvpName].count += 1;
-      } else {
-        stats[rsvpName] = { count: 1, percentage: 0, color: getRsvpColor(rsvpName) };
-      }
+      const statusKey = mapRsvpToStatus(rsvpName);
+      stats[statusKey].count += 1;
     });
 
     // Calculate percentages
     const totalParticipants = participants.length;
     Object.keys(stats).forEach(key => {
-      stats[key].percentage = totalParticipants > 0 ? (stats[key].count / totalParticipants) * 100 : 0;
+      const statusKey = key as keyof typeof RSVP_STATUSES;
+      stats[statusKey].percentage = totalParticipants > 0 
+        ? (stats[statusKey].count / totalParticipants) * 100 
+        : 0;
     });
 
-    return stats;
-  }, [participants, rsvpOptions, getRsvpStatusName]);
+    // Sort by predefined order
+    const sortedStats = Object.entries(stats)
+      .sort(([, a], [, b]) => {
+        const orderA = RSVP_STATUSES[a.label as keyof typeof RSVP_STATUSES]?.order || 999;
+        const orderB = RSVP_STATUSES[b.label as keyof typeof RSVP_STATUSES]?.order || 999;
+        return orderA - orderB;
+      })
+      .reduce((acc, [key, value]) => {
+        acc[key as keyof typeof RSVP_STATUSES] = value;
+        return acc;
+      }, {} as typeof stats);
 
-  const getRsvpColor = (rsvpName: string) => {
-    switch (rsvpName.toLowerCase()) {
-      case 'accepted':
-      case 'attending':
-        return 'bg-green-500';
-      case 'declined':
-      case 'not attending':
-        return 'bg-red-500';
-      case 'tentative':
-        return 'bg-yellow-500';
-      case 'pending':
-      case 'no response':
-        return 'bg-gray-500';
-      default:
-        return 'bg-blue-500';
-    }
-  };
+    return sortedStats;
+  }, [participants, getRsvpStatusName]);
 
   const getParticipantStats = useCallback(() => {
     const individualCount = participants.filter(p => p.type === 'individual').length;
     const groupCount = participants.filter(p => p.type === 'group').length;
-    const acceptedCount = participants.filter(p => 
-      ['accepted', 'attending'].includes(getRsvpStatusName(p.rsvp_id).toLowerCase())
-    ).length;
-    const declinedCount = participants.filter(p => 
-      ['declined', 'not attending'].includes(getRsvpStatusName(p.rsvp_id).toLowerCase())
-    ).length;
-    const pendingCount = participants.filter(p => !p.rsvp_id || getRsvpStatusName(p.rsvp_id) === 'Pending').length;
+    
+    // Calculate RSVP counts using our status mapping
+    let acceptedCount = 0;
+    let declinedCount = 0;
+    let pendingCount = 0;
+    
+    participants.forEach(participant => {
+      const rsvpName = getRsvpStatusName(participant.rsvp_id);
+      const statusKey = mapRsvpToStatus(rsvpName);
+      
+      switch(statusKey) {
+        case 'ATTENDING':
+          acceptedCount++;
+          break;
+        case 'DECLINED':
+        case 'NOT_ATTENDING':
+          declinedCount++;
+          break;
+        default:
+          pendingCount++;
+          break;
+      }
+    });
 
     return {
       individualCount,
@@ -618,7 +756,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
             <p className="text-lg font-bold text-gray-900 dark:text-white">
               {stats.acceptedCount}
             </p>
-            <p className="text-xs text-gray-600 dark:text-gray-400">Accepted</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Attending</p>
           </div>
         </div>
       ) : (
@@ -661,7 +799,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {stats.acceptedCount}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Accepted</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Attending</p>
             </div>
             
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
@@ -669,7 +807,7 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               <p className="text-2xl font-bold text-gray-900 dark:text-white">
                 {stats.declinedCount}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Declined</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Not Attending</p>
             </div>
             
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 text-center">
@@ -688,19 +826,25 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               RSVP Status Breakdown
             </h4>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              {Object.entries(rsvpStats).map(([status, data]) => (
-                <div key={status} className="text-center">
-                  <div className={`w-12 h-12 ${data.color} rounded-full flex items-center justify-center mx-auto mb-2`}>
-                    <span className="text-white font-bold text-sm">{data.count}</span>
+              {Object.entries(rsvpStats).map(([statusKey, data]) => {
+                const Icon = data.icon;
+                return (
+                  <div key={statusKey} className="text-center">
+                    <div className={`w-12 h-12 ${data.color} rounded-full flex items-center justify-center mx-auto mb-2`}>
+                      <Icon className="h-6 w-6 text-white" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
+                      {data.label}
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-white">
+                      {data.count}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {data.percentage.toFixed(1)}%
+                    </p>
                   </div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white mb-1">
-                    {status}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {data.percentage.toFixed(1)}%
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -772,17 +916,16 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
                               onClick={(e) => e.stopPropagation()}
                             />
                             <div className="flex items-center gap-3">
-                              {user.image ? (
+                              {user.image && !imageErrors[user.id] ? (
                                 <img 
                                   src={user.image} 
                                   alt={user.name}
                                   className="w-8 h-8 rounded-full object-cover"
+                                  onError={() => handleImageError(user.id)}
                                 />
                               ) : (
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                  <span className="text-sm font-medium text-blue-600">
-                                    {getInitials(user.name)}
-                                  </span>
+                                <div className={`w-8 h-8 ${getAvatarColor(user.name)} rounded-full flex items-center justify-center text-white text-xs font-bold`}>
+                                  {getInitials(user.name)}
                                 </div>
                               )}
                               <div>
@@ -896,112 +1039,137 @@ const MeetingParticipants: React.FC<MeetingParticipantsProps> = ({
               </div>
             ) : (
               <div className="divide-y divide-gray-200 dark:divide-gray-600 max-h-96 overflow-y-auto">
-                {participants.map(participant => (
-                  <div key={participant.id} className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 flex-1">
-                        {/* Avatar */}
-                        {participant.type === 'individual' ? (
-                          participant.user?.image ? (
-                            <img
-                              src={participant.user.image}
-                              alt={participant.user.name}
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
+                {participants.map(participant => {
+                  const rsvpBadge = getRsvpBadge(participant.rsvp_id);
+                  const Icon = rsvpBadge.icon;
+                  
+                  return (
+                    <div key={participant.id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 flex-1">
+                          {/* Avatar with fallback initials */}
+                          {participant.type === 'individual' ? (
+                            participant.user?.image && !imageErrors[participant.user.id] ? (
+                              <img
+                                src={participant.user.image}
+                                alt={participant.user.name}
+                                className="w-10 h-10 rounded-full object-cover"
+                                onError={() => handleImageError(participant.user!.id)}
+                              />
+                            ) : (
+                              <div className={`w-10 h-10 ${getAvatarColor(participant.user?.name || '')} rounded-full flex items-center justify-center text-white text-sm font-bold`}>
+                                {getInitials(participant.user?.name || '')}
+                              </div>
+                            )
                           ) : (
-                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                              <span className="text-sm font-medium text-blue-600">
-                                {getInitials(participant.user?.name || 'U')}
+                            <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                              <UsersIcon className="w-5 h-5 text-purple-600" />
+                            </div>
+                          )}
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <p className="font-medium text-gray-900 dark:text-white truncate">
+                                {participant.type === 'individual' 
+                                  ? participant.user?.name 
+                                  : participant.group?.name
+                                }
+                              </p>
+                              <span className={
+                                participant.type === 'individual' 
+                                  ? getRoleBadge(participant.user?.role || 'Participant')
+                                  : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+                              }>
+                                {participant.type === 'individual' 
+                                  ? participant.user?.role 
+                                  : 'Group'
+                                }
+                              </span>
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${rsvpBadge.bgLight} ${rsvpBadge.textLight} dark:${rsvpBadge.bgDark} dark:${rsvpBadge.textDark}`}>
+                                <Icon className="h-3 w-3 mr-1" />
+                                {rsvpBadge.label}
                               </span>
                             </div>
-                          )
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                            <UsersIcon className="w-5 h-5 text-purple-600" />
-                          </div>
-                        )}
-
-                        {/* Info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <p className="font-medium text-gray-900 dark:text-white truncate">
+                            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                               {participant.type === 'individual' 
-                                ? participant.user?.name 
-                                : participant.group?.name
+                                ? participant.user?.email
+                                : `${participant.group?.users?.length || 0} members`
                               }
                             </p>
-                            <span className={
-                              participant.type === 'individual' 
-                                ? getRoleBadge(participant.user?.role || 'Participant')
-                                : "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
-                            }>
-                              {participant.type === 'individual' 
-                                ? participant.user?.role 
-                                : 'Group'
-                              }
-                            </span>
-                            <span className={getRsvpBadge(getRsvpStatusName(participant.rsvp_id))}>
-                              {getRsvpStatusName(participant.rsvp_id)}
-                            </span>
                           </div>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                            {participant.type === 'individual' 
-                              ? participant.user?.email
-                              : `${participant.group?.users?.length || 0} members`
-                            }
-                          </p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-3">
+                          <select
+                            value={participant.rsvp_id || ''}
+                            onChange={(e) => updateParticipantRsvp(participant.id, e.target.value)}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          >
+                            <option value="">Pending</option>
+                            {rsvpOptions.map(rsvp => {
+                              const statusKey = mapRsvpToStatus(rsvp.name);
+                              const status = RSVP_STATUSES[statusKey];
+                              return (
+                                <option key={rsvp.id} value={rsvp.id}>
+                                  {status?.label || rsvp.name}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          
+                          <button
+                            onClick={() => removeParticipant(participant.id)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                            title="Remove participant"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-3">
-                        <select
-                          value={participant.rsvp_id || ''}
-                          onChange={(e) => updateParticipantRsvp(participant.id, e.target.value)}
-                          className="px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        >
-                          <option value="">Pending</option>
-                          {rsvpOptions.map(rsvp => (
-                            <option key={rsvp.id} value={rsvp.id}>{rsvp.name}</option>
-                          ))}
-                        </select>
-                        
-                        <button
-                          onClick={() => removeParticipant(participant.id)}
-                          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                          title="Remove participant"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Group Members (if group) */}
-                    {participant.type === 'group' && participant.group?.users && (
-                      <div className="mt-3 pl-13">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Group members:</p>
-                        <div className="space-y-2">
-                          {participant.group.users.map(user => (
-                            <div key={user.id} className="flex items-center gap-2 text-sm">
-                              <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center">
-                                <span className="text-xs text-gray-600">
-                                  {getInitials(user.name)}
+                      {/* Group Members (if group) */}
+                      {participant.type === 'group' && participant.group?.users && (
+                        <div className="mt-3 pl-13">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Group members:</p>
+                          <div className="space-y-2">
+                            {participant.group.users.map(user => (
+                              <div key={user.id} className="flex items-center gap-2 text-sm">
+                                {user.image && !imageErrors[user.id] ? (
+                                  <img
+                                    src={user.image}
+                                    alt={user.name}
+                                    className="w-6 h-6 rounded-full object-cover"
+                                    onError={() => handleImageError(user.id)}
+                                  />
+                                ) : (
+                                  <div className={`w-6 h-6 ${getAvatarColor(user.name)} rounded-full flex items-center justify-center text-white text-xs font-bold`}>
+                                    {getInitials(user.name)}
+                                  </div>
+                                )}
+                                <span className="text-gray-700 dark:text-gray-300">{user.name}</span>
+                                <span className={getRoleBadge(user.role)}>
+                                  {user.role}
                                 </span>
                               </div>
-                              <span className="text-gray-700 dark:text-gray-300">{user.name}</span>
-                              <span className={getRoleBadge(user.role)}>
-                                {user.role}
-                              </span>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
+
+          {/* Timezone Info Footer */}
+          {settings && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 text-right">
+              All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
+            </div>
+          )}
         </>
       )}
     </div>

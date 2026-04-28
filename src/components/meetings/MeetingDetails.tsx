@@ -1,3 +1,4 @@
+// src/components/meetings/MeetingDetails.tsx
 "use client";
 import React from 'react';
 import { Calendar, Clock, MapPin, Edit } from 'lucide-react';
@@ -26,9 +27,14 @@ interface Meeting {
 interface MeetingDetailsProps {
   meeting: Meeting;
   onEdit: () => void;
+  settings?: {
+    timezone: string;
+    date_format: string;
+    time_format: '12' | '24';
+  };
 }
 
-const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit }) => {
+const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit, settings }) => {
   const calculateEndTime = () => {
     if (!meeting?.start_at || !meeting?.period) return 'N/A';
     
@@ -46,7 +52,25 @@ const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit }) => {
   const formatMeetingDate = (dateString: string, includeTime: boolean = true) => {
     try {
       const date = new Date(dateString);
-      return formatSystemDate(date, includeTime);
+      
+      if (includeTime) {
+        return date.toLocaleString('en-US', {
+          timeZone: settings?.timezone || 'Africa/Nairobi',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: settings?.time_format === '12'
+        });
+      } else {
+        return date.toLocaleDateString('en-US', {
+          timeZone: settings?.timezone || 'Africa/Nairobi',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      }
     } catch (error) {
       console.error('Error formatting date:', error);
       return 'Invalid date';
@@ -62,7 +86,7 @@ const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit }) => {
           </h2>
           
           <div className="space-y-3">
-            <div className="flex items-center gap-4 text-lg text-gray-700 dark:text-gray-300">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-4 text-lg text-gray-700 dark:text-gray-300">
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-blue-500" />
                 <span className="font-medium">Start:</span>
@@ -86,6 +110,13 @@ const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit }) => {
               </div>
             )}
           </div>
+
+          {/* Timezone Info */}
+          {settings && (
+            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+              All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
+            </div>
+          )}
         </div>
         
         <button

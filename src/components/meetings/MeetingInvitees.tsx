@@ -1,7 +1,8 @@
+// src/components/meetings/MeetingInvitees.tsx
 "use client";
 import React, { useState, useEffect, useCallback } from 'react';
 import { User, Users, RefreshCw, Loader2 } from 'lucide-react';
-import { useParams } from 'next/navigation'; // ADD THIS IMPORT
+import { useParams } from 'next/navigation';
 
 interface Participant {
   id: string;
@@ -32,15 +33,20 @@ interface MeetingInviteesProps {
   realTimeUpdates?: boolean;
   reloadInterval?: number;
   maxReloads?: number;
+  settings?: {
+    timezone: string;
+    date_format: string;
+    time_format: '12' | '24';
+  };
 }
 
 const MeetingInvitees: React.FC<MeetingInviteesProps> = ({ 
   meeting, 
   realTimeUpdates = true,
   reloadInterval = 1000,
-  maxReloads = 5
+  maxReloads = 5,
+  settings
 }) => {
-  // FIXED: Get the actual meeting ID from the URL
   const params = useParams();
   const urlMeetingId = params.id as string;
   
@@ -50,7 +56,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
   const [reloadCount, setReloadCount] = useState(0);
   const [isAutoReloading, setIsAutoReloading] = useState(false);
 
-  // FIXED: Use URL meeting ID as the source of truth
   const currentMeetingId = urlMeetingId || meeting.id;
 
   const totalParticipants = participants.length;
@@ -58,10 +63,9 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
   const visibleParticipants = participants.slice(0, visibleCount);
   const hiddenParticipants = participants.slice(visibleCount);
 
-  // FIXED: Always use the URL meeting ID for API calls
   const fetchParticipants = useCallback(async (): Promise<Participant[]> => {
     try {
-      console.log(`🔍 Fetching participants for ACTUAL meeting ID: ${currentMeetingId}`);
+      console.log(`🔍 Fetching participants for meeting ID: ${currentMeetingId}`);
       
       const response = await fetch(`/api/meetings/${currentMeetingId}/participants`);
       if (!response.ok) {
@@ -69,17 +73,9 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
       }
       const data = await response.json();
       
-      // Validate that we only get participants for this specific meeting
       const validatedData = data
         .filter((participant: any) => {
-          const isForThisMeeting = participant.meeting_id === currentMeetingId.toString();
-          if (!isForThisMeeting) {
-            console.warn(`⚠️ Filtered out participant from wrong meeting:`, {
-              participantMeetingId: participant.meeting_id,
-              currentMeetingId: currentMeetingId
-            });
-          }
-          return isForThisMeeting;
+          return participant.meeting_id === currentMeetingId.toString();
         })
         .map((participant: any) => ({
           id: participant.id,
@@ -97,7 +93,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
           } : undefined
         }));
       
-      console.log(`✅ Validated ${validatedData.length} participants for ACTUAL meeting ${currentMeetingId}`);
       return validatedData;
     } catch (error) {
       console.error('❌ Error fetching participants:', error);
@@ -105,7 +100,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
     }
   }, [currentMeetingId, participants]);
 
-  // FIXED: Use currentMeetingId in reload function
   const reloadParticipants = useCallback(async (isManual = false) => {
     if (isLoading && !isManual) return;
     
@@ -120,16 +114,13 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
       } else {
         setReloadCount(0);
       }
-      
-      console.log(`🔄 Participants reloaded for ACTUAL meeting ${currentMeetingId} (${isManual ? 'manual' : 'auto'}) - Count: ${newParticipants.length}`);
     } catch (error) {
       console.error('Failed to reload participants:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [fetchParticipants, isLoading, currentMeetingId]);
+  }, [fetchParticipants, isLoading]);
 
-  // Auto-reload effect - FIXED: use currentMeetingId
   useEffect(() => {
     if (!realTimeUpdates) return;
 
@@ -151,21 +142,15 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
     };
   }, [realTimeUpdates, reloadInterval, maxReloads, reloadCount, reloadParticipants]);
 
-  // FIXED: Reset when URL meeting ID changes
   useEffect(() => {
-    console.log(`🔄 URL Meeting ID changed to: ${urlMeetingId}, resetting participants`);
-    setParticipants([]); // Clear previous meeting's participants
+    setParticipants([]);
     setReloadCount(0);
     reloadParticipants(true);
-  }, [urlMeetingId]); // Watch URL meeting ID changes
+  }, [urlMeetingId]);
 
-  // FIXED: Initial load uses URL meeting ID
   useEffect(() => {
-    console.log(`📥 Initial load for ACTUAL meeting ${currentMeetingId}`);
     reloadParticipants(true);
-  }, []); // Load once on mount
-
-  // ... (rest of your functions remain the same - getInitials, getAvatarColor, etc.)
+  }, []);
 
   const getInitials = (name: string) => {
     if (!name) return "?";
@@ -252,7 +237,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
         </div>
 
         <div className="space-y-4">
-          {/* FIXED: Use meeting data but prioritize URL ID */}
           {meeting.chair_name && (
             <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Chair Person</label>
@@ -278,7 +262,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
             </div>
           )}
 
-          {/* Participants */}
           {totalParticipants > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -293,7 +276,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
               </div>
 
               <div className="flex items-center -space-x-2">
-                {/* Visible participants */}
                 {visibleParticipants.map((participant, index) => {
                   const displayName = getDisplayName(participant);
                   const imageUrl = formatImageUrl(getParticipantImage(participant));
@@ -327,7 +309,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
                         )}
                       </div>
 
-                      {/* Tooltip showing name */}
                       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-10">
                         {displayName}
                         {getParticipantRole(participant) && (
@@ -340,14 +321,12 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
                   );
                 })}
 
-                {/* Remaining participants under +X */}
                 {hiddenParticipants.length > 0 && (
                   <div className="relative group w-8 h-8 bg-gray-100 border-2 border-white rounded-full dark:border-gray-900 dark:bg-gray-700 flex items-center justify-center cursor-pointer">
                     <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
                       +{hiddenParticipants.length}
                     </span>
 
-                    {/* Hover popover with remaining names */}
                     <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 rounded-lg p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-20 w-max max-w-xs text-sm text-gray-800 dark:text-gray-200">
                       <p className="font-medium text-gray-600 dark:text-gray-300 mb-1">
                         Other Participants:
@@ -366,7 +345,6 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
             </div>
           )}
 
-          {/* Empty state */}
           {totalParticipants === 0 && (
             <div className="text-center py-4">
               <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
@@ -381,21 +359,10 @@ const MeetingInvitees: React.FC<MeetingInviteesProps> = ({
           )}
         </div>
 
-        {/* FIXED: Debug info shows URL meeting ID */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              <div><strong>URL Meeting ID:</strong> {urlMeetingId}</div>
-              <div><strong>Prop Meeting ID:</strong> {meeting.id}</div>
-              <div><strong>Current Meeting ID:</strong> {currentMeetingId}</div>
-              <div><strong>Current Participants:</strong> {totalParticipants}</div>
-              <div><strong>Auto-reload:</strong> {realTimeUpdates ? 'Enabled' : 'Disabled'}</div>
-              <div><strong>Reload count:</strong> {reloadCount}/{maxReloads}</div>
-              <div><strong>Last update:</strong> {lastUpdate.toISOString()}</div>
-              <div className="mt-2 text-green-600">
-                ✅ Showing participants for ACTUAL meeting ID: {currentMeetingId}
-              </div>
-            </div>
+        {/* Timezone Info */}
+        {settings && (
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+            All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -131,7 +132,6 @@
   --color-warning-950: #4e1d09;
 
   --color-theme-pink-500: #ee46bc;
-
   --color-theme-purple-500: #7a5af8;
 
   --shadow-theme-md:
@@ -148,7 +148,7 @@
     0px 20px 24px -4px rgba(16, 24, 40, 0.08),
     0px 8px 8px -4px rgba(16, 24, 40, 0.03);
   --shadow-datepicker: -5px 0 0 #262d3c, 5px 0 0 #262d3c;
-  --shadow-focus-ring: 0px 0px 0px 4px rgba(70, 95, 255, 0.12);
+  --shadow-focus-ring: 0px 0px 0px 4px var(--brand-500-alpha-12, rgba(70, 95, 255, 0.12));
   --shadow-slider-navigation:
     0px 1px 2px 0px rgba(16, 24, 40, 0.1), 0px 1px 3px 0px rgba(16, 24, 40, 0.1);
   --shadow-tooltip:
@@ -197,7 +197,12 @@
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  background-color: var(--brand-50, #ecf3ff);
+  color: var(--brand-500, #465fff);
+}
+.dark .menu-item-active {
+  background-color: color-mix(in srgb, var(--brand-500, #465fff) 12%, transparent);
+  color: var(--brand-500, #7592ff);
 }
 
 @utility menu-item-inactive {
@@ -209,7 +214,10 @@
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-400;
+  color: var(--brand-500, #465fff);
+}
+.dark .menu-item-icon-active {
+  color: var(--brand-500, #7592ff);
 }
 
 @utility menu-item-icon-inactive {
@@ -221,7 +229,11 @@
 }
 
 @utility menu-item-arrow-active {
-  @apply rotate-180 text-brand-500 dark:text-brand-400;
+  rotate: 180deg;
+  color: var(--brand-500, #465fff);
+}
+.dark .menu-item-arrow-active {
+  color: var(--brand-500, #7592ff);
 }
 
 @utility menu-item-arrow-inactive {
@@ -233,7 +245,12 @@
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  background-color: var(--brand-50, #ecf3ff);
+  color: var(--brand-500, #465fff);
+}
+.dark .menu-dropdown-item-active {
+  background-color: color-mix(in srgb, var(--brand-500, #465fff) 12%, transparent);
+  color: var(--brand-500, #7592ff);
 }
 
 @utility menu-dropdown-item-inactive {
@@ -241,15 +258,30 @@
 }
 
 @utility menu-dropdown-badge {
-  @apply block rounded-full px-2.5 py-0.5 text-xs font-medium uppercase text-brand-500 dark:text-brand-400;
+  display: block;
+  border-radius: 9999px;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  color: var(--brand-500, #465fff);
+}
+.dark .menu-dropdown-badge {
+  color: var(--brand-500, #7592ff);
 }
 
 @utility menu-dropdown-badge-active {
-  @apply bg-brand-100 dark:bg-brand-500/20;
+  background-color: var(--brand-100, #dde9ff);
+}
+.dark .menu-dropdown-badge-active {
+  background-color: color-mix(in srgb, var(--brand-500, #465fff) 20%, transparent);
 }
 
 @utility menu-dropdown-badge-inactive {
-  @apply bg-brand-50 group-hover:bg-brand-100 dark:bg-brand-500/15 dark:group-hover:bg-brand-500/20;
+  background-color: var(--brand-50, #ecf3ff);
+}
+.dark .menu-dropdown-badge-inactive {
+  background-color: color-mix(in srgb, var(--brand-500, #465fff) 15%, transparent);
 }
 
 @utility no-scrollbar {
@@ -278,8 +310,6 @@
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
   background-color: #344054;
 }
-
-
 
 @layer utilities {
   /* For Remove Date Icon */
@@ -337,7 +367,7 @@
 
 .flatpickr-months .flatpickr-prev-month:hover svg,
 .flatpickr-months .flatpickr-next-month:hover svg {
-  @apply stroke-brand-500;
+  stroke: var(--brand-500, #465fff);
 }
 .flatpickr-calendar.arrowTop:before,
 .flatpickr-calendar.arrowTop:after {
@@ -359,6 +389,18 @@
 
 .flatpickr-weekdays {
   @apply h-auto mt-6 mb-4 !bg-transparent;
+}
+
+.flatpickr-calendar {
+  @apply mt-2 !bg-white !rounded-xl !p-5 !shadow-none !border !border-gray-200 dark:!border-white/5 !text-gray-500 dark:!bg-gray-dark dark:!text-gray-400 dark:!shadow-theme-xl 2xsm:!w-auto;
+}
+
+@media (max-width: 525px) {
+  .flatpickr-calendar.static {
+    left: auto !important;
+    right: 0 !important;
+    margin-right: -30px;
+  }
 }
 
 .flatpickr-weekday {
@@ -455,13 +497,13 @@ span.flatpickr-weekday,
 .flatpickr-day.selected.nextMonthDay,
 .flatpickr-day.startRange.nextMonthDay,
 .flatpickr-day.endRange.nextMonthDay {
-  background: #465fff;
-  @apply !border-brand-500 !bg-brand-500 hover:!border-brand-50 hover:!bg-brand-500;
+  background: var(--brand-500, #465fff) !important;
+  border-color: var(--brand-500, #465fff) !important;
 }
 .flatpickr-day.selected.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
-  box-shadow: -10px 0 0 #465fff;
+  box-shadow: -10px 0 0 var(--brand-500, #465fff);
 }
 
 .flatpickr-months .flatpickr-prev-month svg,
@@ -520,7 +562,18 @@ span.flatpickr-weekday,
   @apply hidden;
 }
 .fc-addEventButton-button {
-  @apply !rounded-lg !border-0 !bg-brand-500 !px-4 !py-2.5 !text-sm !font-medium hover:!bg-brand-600 focus:!shadow-none;
+  border-radius: 0.5rem !important;
+  border: 0 !important;
+  background-color: var(--brand-500, #465fff) !important;
+  padding: 0.625rem 1rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+}
+.fc-addEventButton-button:hover {
+  background-color: var(--brand-600, #3641f5) !important;
+}
+.fc-addEventButton-button:focus {
+  box-shadow: none !important;
 }
 .fc-toolbar-title {
   @apply !text-lg !font-medium text-gray-800 dark:text-white/90;
@@ -589,7 +642,8 @@ span.flatpickr-weekday,
   @apply border-error-50 bg-error-50;
 }
 .event-fc-color.fc-bg-primary {
-  @apply border-brand-50 bg-brand-50;
+  border-color: var(--brand-50, #ecf3ff);
+  background-color: var(--brand-50, #ecf3ff);
 }
 .event-fc-color.fc-bg-warning {
   @apply border-orange-50 bg-orange-50;
@@ -601,7 +655,7 @@ span.flatpickr-weekday,
   @apply bg-error-500;
 }
 .event-fc-color.fc-bg-primary .fc-daygrid-event-dot {
-  @apply bg-brand-500;
+  background-color: var(--brand-500, #465fff);
 }
 .event-fc-color.fc-bg-warning .fc-daygrid-event-dot {
   @apply bg-orange-500;
@@ -700,13 +754,23 @@ span.flatpickr-weekday,
   @apply !bg-gray-50 dark:!bg-gray-900;
 }
 .jvectormap-region.jvectormap-element {
-  @apply !fill-gray-300 hover:!fill-brand-500 dark:!fill-gray-700 dark:hover:!fill-brand-500;
+  @apply !fill-gray-300;
+}
+.jvectormap-region.jvectormap-element:hover {
+  fill: var(--brand-500, #465fff) !important;
+}
+.dark .jvectormap-region.jvectormap-element {
+  @apply !fill-gray-700;
+}
+.dark .jvectormap-region.jvectormap-element:hover {
+  fill: var(--brand-500, #7592ff) !important;
 }
 .jvectormap-marker.jvectormap-element {
   @apply !stroke-gray-200 dark:!stroke-gray-800;
 }
 .jvectormap-tip {
-  @apply !bg-brand-500 !border-none !px-2 !py-1;
+  background-color: var(--brand-500, #465fff) !important;
+  @apply !border-none !px-2 !py-1;
 }
 .jvectormap-zoomin,
 .jvectormap-zoomout {
@@ -714,17 +778,26 @@ span.flatpickr-weekday,
 }
 
 .form-check-input:checked ~ span {
-  @apply border-[6px] border-brand-500 bg-brand-500 dark:border-brand-500;
+  border: 6px solid var(--brand-500, #465fff) !important;
+  background-color: var(--brand-500, #465fff) !important;
+}
+.dark .form-check-input:checked ~ span {
+  border-color: var(--brand-500, #7592ff) !important;
 }
 
 .taskCheckbox:checked ~ .box span {
-  @apply opacity-100 bg-brand-500;
+  opacity: 1;
+  background-color: var(--brand-500, #465fff);
 }
 .taskCheckbox:checked ~ p {
   @apply text-gray-400 line-through;
 }
 .taskCheckbox:checked ~ .box {
-  @apply border-brand-500 bg-brand-500 dark:border-brand-500;
+  border-color: var(--brand-500, #465fff);
+  background-color: var(--brand-500, #465fff);
+}
+.dark .taskCheckbox:checked ~ .box {
+  border-color: var(--brand-500, #7592ff);
 }
 
 .task {
@@ -737,4 +810,156 @@ span.flatpickr-weekday,
     0 1px 2px 0 rgba(16, 24, 40, 0.06);
   opacity: 0.8;
   cursor: grabbing; /* Changes the cursor to indicate dragging */
+}
+
+/*
+  ---break---
+*/
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/*
+  ---break---
+*/
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  
+  /* Dynamic brand colors - will be overridden by SystemSettingsContext */
+  --brand-50: var(--primary-color-light, #ecf3ff);
+  --brand-100: var(--primary-color-lighter, #dde9ff);
+  --brand-500: var(--primary-color, #465fff);
+  --brand-600: var(--primary-color-dark, #3641f5);
+  --brand-700: var(--primary-color-darker, #2a31d8);
+  
+  /* Secondary color variations */
+  --secondary-50: var(--secondary-color-light, #eff6ff);
+  --secondary-500: var(--secondary-color, #1e40af);
+  --secondary-600: var(--secondary-color-dark, #1e3a8a);
+}
+
+/*
+  ---break---
+*/
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+  
+  /* Dark mode brand colors */
+  --brand-50: color-mix(in srgb, var(--primary-color, #465fff) 10%, #0a0a0a);
+  --brand-500: var(--primary-color, #7592ff);
+  --brand-600: var(--primary-color-dark, #465fff);
+}
+
+/*
+  ---break---
+*/
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

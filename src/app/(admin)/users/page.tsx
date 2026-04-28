@@ -1,9 +1,10 @@
-// app/(admin)/users/page.tsx
+// app/(admin)/users/page.tsx - UPDATED
 import type { Metadata } from "next";
 import UsersList from "@/components/users/UsersList";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { supabaseServer } from '@/lib/supabase/server';
 
 export const metadata: Metadata = {
   title: "User Management | E-Cabinet System",
@@ -18,22 +19,88 @@ export default async function UsersPage() {
     redirect('/auth/signin');
   }
 
-  // Fetch auth users data server-side
-  const authUsersResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/auth/users`, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    next: { revalidate: 30 } // Revalidate every 30 seconds
-  });
+  // Fetch auth users data using Supabase directly
+  const supabase = supabaseServer();
+  let authUsers = [];
 
-  const authUsersData = await authUsersResponse.json();
-  const authUsers = authUsersData.users || [];
+  try {
+    // Get all users from Supabase Auth (admin API)
+    const { data: { users }, error: authError } = await supabase.auth.admin.listUsers();
 
-  console.log('👥 Users page - Session:', {
-    user: session.user.email,
-    role: session.user.role,
-    authUsersCount: authUsers.length
-  });
+    if (authError) {
+      console.error('❌ Error fetching auth users:', authError);
+      throw new Error('Failed to fetch authentication users');
+    }
+
+    // Get custom users from your database
+    const { data: customUsers, error: customError } = await supabase
+      .from('users')
+      .select('*');
+
+    if (customError) {
+      console.error('❌ Error fetching custom users:', customError);
+      // Continue with auth users only
+    }
+
+    // Transform and combine data
+    authUsers = users.map(authUser => {
+      const customUser = customUsers?.find(u => u.email === authUser.email);
+      
+      return {
+        id: authUser.id,
+        email: authUser.email || '',
+        email_confirmed: authUser.email_confirmed_at !== null,
+        last_sign_in: authUser.last_sign_in_at,
+        created_at: authUser.created_at,
+        user_metadata: authUser.user_metadata || {},
+        custom_user_linked: !!customUser,
+        custom_user_id: customUser?.id,
+        auth_id_in_custom: customUser?.auth_user_id,
+        status: customUser?.status || 'active',
+        role: customUser?.role || 'user',
+        name: authUser.user_metadata?.name || customUser?.name || '',
+        image: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || customUser?.image,
+        phone: authUser.user_metadata?.phone || customUser?.phone,
+        ministry_name: customUser?.ministry_name
+      };
+    });
+
+    // Sort users by role hierarchy
+    const roleHierarchy = {
+      "President": 1,
+      "Deputy President": 2,
+      "Prime Cabinet Secretary": 3,
+      "Cabinet Secretary": 4,
+      "Principal Secretary": 5,
+      "Cabinet Secretariat": 6,
+      "Director": 7,
+      "Assistant Director": 8,
+      "Admin": 9,
+      "Attorney General": 10,
+      "Secretary to the Cabinet": 11
+    };
+
+    authUsers.sort((a, b) => {
+      const roleA = roleHierarchy[a.role as keyof typeof roleHierarchy] || 999;
+      const roleB = roleHierarchy[b.role as keyof typeof roleHierarchy] || 999;
+      
+      if (roleA !== roleB) {
+        return roleA - roleB;
+      }
+      
+      return a.id.localeCompare(b.id);
+    });
+
+    console.log('✅ Users page - Loaded:', {
+      user: session.user.email,
+      role: session.user.role,
+      authUsersCount: authUsers.length
+    });
+
+  } catch (error) {
+    console.error('💥 Error in UsersPage:', error);
+    // authUsers will remain empty array
+  }
 
   return (
     <div className="min-h-screen bg-gray-50/30 dark:bg-gray-900/20 py-6">

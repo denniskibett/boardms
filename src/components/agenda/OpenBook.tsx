@@ -1,3 +1,4 @@
+// src/components/agenda/OpenBook.tsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -6,6 +7,7 @@ import BookViewer from '@/components/agenda/BookViewer';
 import AgendaManager from '@/components/agenda/AgendaManager';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
 import AnnotationToolbar from '@/components/agenda/AnnotationToolbar';
+import { Loader2 } from 'lucide-react'; // Add this import
 
 interface OpenBookProps {
   meetingId?: string;
@@ -20,7 +22,8 @@ export default function OpenBook({ meetingId }: OpenBookProps) {
   
   const {
     documents,
-    agendas,    addAgenda,
+    agendas,
+    addAgenda,
     updateAgenda,
     deleteAgenda,
     loading
@@ -95,7 +98,7 @@ export default function OpenBook({ meetingId }: OpenBookProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
       </div>
     );
   }

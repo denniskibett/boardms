@@ -1,11 +1,13 @@
+// src/hooks/useOpenBook.ts
 import { useState, useEffect, useMemo } from 'react';
+import { useMeetingsData } from './useMeetingsData';
 
 interface Document {
   id: string;
   name: string;
   url: string;
   pages: number;
-  type: 'pdf' | 'doc' | 'image' | 'text' | 'docx' | 'ppt' | 'pptx' | 'xls' | 'xlsx';
+  type: 'pdf' | 'doc' | 'image' | 'text' | 'docx' | 'ppt' | 'pptx' | 'xls' | 'xlsx' | 'csv';
   file?: File;
   content?: string;
   agenda_id?: number;
@@ -25,7 +27,6 @@ interface AgendaItem {
   documents?: any[];
   status?: string;
   ministry_name?: string;
-  // Add missing fields
   presenter_id?: number | string;
   ministry_id?: number | string;
   presenter?: string;
@@ -44,334 +45,268 @@ interface Annotation {
 
 export function useOpenBook(meetingId?: string) {
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [agendas, setAgendas] = useState<AgendaItem[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(true);
   
-  // Add these state variables at the top of your useOpenBook hook
-  const [pendingOrderUpdates, setPendingOrderUpdates] = useState<Array<{id: string, order: number}>>([]);
-  const [isSyncingOrders, setIsSyncingOrders] = useState(false);
+  // Use the centralized meetings data hook
+  const meetingsData = useMeetingsData();
 
-  // Define fetchMeetingData so it can be called externally
-  const fetchMeetingData = async () => {
-    if (!meetingId) {
-      console.log('❌ No meetingId provided, using local state only');
-      setLoading(false);
-      return;
+  // ✅ Move the helper function definition to the top, before any useMemo that uses it
+  const mapFileTypeToDocumentType = (fileType: string, fileName?: string): Document['type'] => {
+    // First check by filename extension (most reliable)
+    if (fileName) {
+      const extension = fileName.split('.').pop()?.toLowerCase();
+      
+      if (extension === 'csv') return 'csv';
+      if (extension === 'pptx') return 'pptx';
+      if (extension === 'ppt') return 'ppt';
+      if (extension === 'docx') return 'docx';
+      if (extension === 'doc') return 'doc';
+      if (extension === 'xlsx') return 'xlsx';
+      if (extension === 'xls') return 'xls';
+      if (extension === 'pdf') return 'pdf';
+      if (extension === 'txt') return 'text';
+      if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(extension || '')) return 'image';
     }
 
-    setLoading(true);
-    try {
-      console.log('📡 Fetching meeting data for meetingId:', meetingId);
-      
-      // Fetch agendas for this meeting
-      const agendasResponse = await fetch(`/api/agenda?meetingId=${meetingId}`);
-      if (!agendasResponse.ok) {
-        throw new Error(`Failed to fetch agendas: ${agendasResponse.status}`);
-      }
-      
-      const agendaData = await agendasResponse.json();
-      console.log('📋 Fetched agendas from API:', agendaData);
-
-      // Process existing agendas and their documents
-      const allAgendas: AgendaItem[] = [];
-      const allDocuments: Document[] = [];
-
-      for (const agenda of agendaData) {
-        console.log(`🔍 Processing agenda: ${agenda.name} (ID: ${agenda.id})`);
-        
-        // Fetch documents for this agenda
-        let agendaDocuments = [];
-        try {
-          const docsResponse = await fetch(`/api/agenda/documents?agendaId=${agenda.id}`);
-          if (docsResponse.ok) {
-            agendaDocuments = await docsResponse.json();
-            console.log(`📁 Found ${agendaDocuments.length} documents for agenda ${agenda.id}`);
-            
-            // Convert agenda documents to our Document format
-            const convertedDocs: Document[] = agendaDocuments.map((doc: any) => ({
-              id: doc.id.toString(),
-              name: doc.name,
-              url: doc.file_url,
-              pages: 1,
-              type: mapFileTypeToDocumentType(doc.file_type),
-              agenda_id: agenda.id
-            }));
-            
-            allDocuments.push(...convertedDocs);
-          }
-        } catch (docError) {
-          console.error(`❌ Error fetching documents for agenda ${agenda.id}:`, docError);
-        }
-
-        // Add the main agenda item with all its properties
-        allAgendas.push({
-          id: agenda.id.toString(),
-          order: agenda.sort_order,
-          title: agenda.name,
-          description: agenda.description || '',
-          duration: 30, // Default duration
-          meeting_id: agenda.meeting_id,
-          status: agenda.status,
-          ministry_name: agenda.ministry_name,
-          presenter: agenda.presenter_name,
-          presenter_id: agenda.presenter_id,
-          ministry_id: agenda.ministry_id,
-          cabinet_approval_required: agenda.cabinet_approval_required,
-          documents: agendaDocuments
-        });
-      }
-
-      // Sort agendas by order
-      allAgendas.sort((a, b) => a.order - b.order);
-      
-      console.log('✅ Final processed agendas:', allAgendas);
-      console.log('✅ All documents:', allDocuments);
-
-      setAgendas(allAgendas);
-      setDocuments(allDocuments);
-
-    } catch (error) {
-      console.error('❌ Error fetching meeting data:', error);
-      // Fallback to empty data
-      setAgendas([]);
-      setDocuments([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Fetch meeting data including agendas and documents
-  useEffect(() => {
-    fetchMeetingData();
-  }, [meetingId]);
-
-  // Helper function to map file types
-  const mapFileTypeToDocumentType = (fileType: string): Document['type'] => {
+    // Fallback to MIME type mapping
     const typeMap: { [key: string]: Document['type'] } = {
-      'pdf': 'pdf',
-      'word': 'docx',
-      'powerpoint': 'ppt',
-      'excel': 'xls',
-      'text': 'text',
-      'image': 'image'
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'text/csv': 'csv',
+      'text/plain': 'text',
+      'image/jpeg': 'image',
+      'image/png': 'image',
+      'image/gif': 'image',
     };
+
     return typeMap[fileType] || 'doc';
   };
+  
+  // Get agendas for this specific meeting from the cache
+  const meetingAgendas = meetingId ? meetingsData.agendas[meetingId] || [] : [];
+  
+  // Convert from Agenda format to OpenBook's AgendaItem format
+  const agendas: AgendaItem[] = useMemo(() => {
+    return meetingAgendas.map(agenda => ({
+      id: agenda.id.toString(),
+      order: agenda.sort_order,
+      title: agenda.name,
+      description: agenda.description || '',
+      duration: 30, // Default duration
+      meeting_id: parseInt(agenda.meeting_id),
+      status: agenda.status,
+      ministry_name: agenda.ministry?.name,
+      presenter: agenda.presenter?.name,
+      presenter_id: agenda.presenter_id,
+      ministry_id: agenda.ministry_id,
+      cabinet_approval_required: agenda.cabinet_approval_required,
+      documents: agenda.documents || []
+    })).sort((a, b) => a.order - b.order);
+  }, [meetingAgendas]);
+
+  // Convert documents from all agendas to OpenBook's Document format
+  const allDocuments: Document[] = useMemo(() => {
+    const docs: Document[] = [];
+    
+    meetingAgendas.forEach(agenda => {
+      if (agenda.documents) {
+        agenda.documents.forEach(doc => {
+          docs.push({
+            id: doc.id.toString(),
+            name: doc.name,
+            url: doc.file_url,
+            pages: 1,
+            type: mapFileTypeToDocumentType(doc.file_type, doc.name), // Now this works because function is defined above
+            agenda_id: parseInt(agenda.id)
+          });
+        });
+      }
+    });
+    
+    return docs;
+  }, [meetingAgendas]);
+
+  // Update local documents when meetings data changes
+  useEffect(() => {
+    setDocuments(allDocuments);
+    setLocalLoading(meetingsData.loading);
+  }, [allDocuments, meetingsData.loading]);
 
   const uploadDocument = async (file: File, agendaId?: number) => {
-    let type: Document['type'] = 'doc';
-    if (file.type.includes('pdf')) type = 'pdf';
-    else if (file.type.includes('image')) type = 'image';
-    else if (file.type.includes('text') || file.name.endsWith('.txt')) type = 'text';
-    else if (file.name.endsWith('.docx')) type = 'docx';
-    else if (file.name.endsWith('.ppt') || file.name.endsWith('.pptx')) type = 'ppt';
-    else if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) type = 'xls';
-
-    let content = '';
-    if (type === 'text') {
-      content = await file.text();
+    if (!meetingId || !agendaId) {
+      console.error('❌ Meeting ID and Agenda ID are required for upload');
+      return null;
     }
 
-    // If agendaId is provided, upload to specific agenda
-    if (agendaId && meetingId) {
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('agendaId', agendaId.toString());
-        formData.append('name', file.name);
-
-        const response = await fetch('/api/agenda/documents', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to upload document to agenda');
-        }
-
-        const uploadedDoc = await response.json();
-        
-        // Add to local state
-        const newDocument: Document = {
-          id: uploadedDoc.id.toString(),
-          name: uploadedDoc.name,
-          url: uploadedDoc.file_url,
-          pages: type === 'pdf' ? 10 : 1,
-          type: type,
-          file: file,
-          content: content,
-          agenda_id: agendaId
-        };
-
-        setDocuments(prev => [newDocument, ...prev]);
-
-        // Refresh agendas list
-        await fetchMeetingData();
-
-        return;
-      } catch (error) {
-        console.error('Error uploading document to agenda:', error);
-        // Fall through to local upload
-      }
+    try {
+      // Use the meetingsData hook to upload the document
+      const document = await meetingsData.uploadAgendaDocument(agendaId.toString(), file);
+      
+      // Refresh agendas to get the updated document list
+      await meetingsData.fetchAgendas(meetingId, true);
+      
+      return {
+        id: document.id.toString(),
+        name: document.name,
+        url: document.file_url,
+        pages: 1,
+        type: mapFileTypeToDocumentType(document.file_type, document.name),
+        agenda_id: agendaId
+      };
+    } catch (error) {
+      console.error('❌ Error uploading document:', error);
+      throw error;
     }
-
-    // Local upload (fallback)
-    const newDocument: Document = {
-      id: Date.now().toString(),
-      name: file.name,
-      url: URL.createObjectURL(file),
-      pages: type === 'pdf' ? 10 : 1,
-      type: type,
-      file: file,
-      content: content,
-      agenda_id: agendaId
-    };
-
-    setDocuments(prev => [newDocument, ...prev]);
   };
 
   const addAgenda = async (agenda: Omit<AgendaItem, 'id'>) => {
-    console.log('📝 Adding agenda with meetingId:', meetingId);
-    
     if (!meetingId) {
-      console.log('⚠️ No meetingId, creating local agenda only');
-      // Local only
-      const newAgenda: AgendaItem = {
-        ...agenda,
-        id: Date.now().toString()
-      };
-      setAgendas(prev => [...prev, newAgenda]);
-      return;
+      console.error('❌ Meeting ID is required to add agenda');
+      return null;
     }
 
     try {
-      // Create agenda via API
+      // Use the meetingsData hook to add the agenda
       const agendaData = {
         name: agenda.title,
-        description: agenda.description,
+        description: agenda.description || '',
         meeting_id: parseInt(meetingId),
-        sort_order: agenda.order,
+        sort_order: agenda.order || agendas.length + 1,
         status: 'draft'
       };
 
-      console.log('📤 Sending agenda data to API:', agendaData);
-
-      const response = await fetch('/api/agenda', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(agendaData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('❌ API Error response:', errorData);
-        throw new Error(`Failed to create agenda: ${response.status}`);
-      }
-
-      const newAgenda = await response.json();
-      console.log('✅ Agenda created via API:', newAgenda);
+      const newAgenda = await meetingsData.addAgenda(meetingId, agendaData);
       
-      // Refresh agendas list
-      await fetchMeetingData();
-
-    } catch (error) {
-      console.error('❌ Error creating agenda via API:', error);
-      // Fallback to local
-      const newAgenda: AgendaItem = {
-        ...agenda,
-        id: Date.now().toString(),
-        meeting_id: parseInt(meetingId)
+      // Convert to OpenBook format
+      return {
+        id: newAgenda.id.toString(),
+        order: newAgenda.sort_order,
+        title: newAgenda.name,
+        description: newAgenda.description || '',
+        duration: 30,
+        meeting_id: newAgenda.meeting_id,
+        status: newAgenda.status,
+        documents: []
       };
-      setAgendas(prev => [...prev, newAgenda]);
+    } catch (error) {
+      console.error('❌ Error adding agenda:', error);
+      throw error;
     }
   };
 
   const updateAgenda = async (id: string, updates: Partial<AgendaItem>) => {
-    console.log('✏️ Updating agenda:', id, updates);
-    
-    // Update locally first for immediate UI response
-    setAgendas(prev => prev.map(agenda => 
-      agenda.id === id ? { ...agenda, ...updates } : agenda
-    ));
+    if (!meetingId) {
+      console.error('❌ Meeting ID is required to update agenda');
+      return;
+    }
 
-    // Sync with API
-    if (meetingId) {
-      try {
-        const updateData: any = {
-          name: updates.title || '',
-          description: updates.description || '',
-          status: updates.status || 'draft',
-          sort_order: updates.order || 1
-        };
-
-        // Include presenter_id and ministry_id if they're provided
-        if (updates.presenter_id !== undefined) updateData.presenter_id = updates.presenter_id;
-        if (updates.ministry_id !== undefined) updateData.ministry_id = updates.ministry_id;
-        if (updates.cabinet_approval_required !== undefined) updateData.cabinet_approval_required = updates.cabinet_approval_required;
-
-        console.log('📤 Sending update data to API:', updateData);
-
-        // FIX: Use the correct API endpoint
-        const response = await fetch(`/api/agenda/${id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(updateData),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.warn('⚠️ Failed to update agenda via API:', errorData);
-          // Refresh data to get the correct state
-          await fetchMeetingData();
-        } else {
-          console.log('✅ Agenda updated via API');
-          // Refresh data to get updated presenter/ministry names
-          await fetchMeetingData();
-        }
-      } catch (error) {
-        console.error('Error updating agenda via API:', error);
-        // Refresh data on error
-        await fetchMeetingData();
+    try {
+      // Find the current agenda item to get all its data
+      const currentAgenda = agendas.find(a => a.id === id);
+      
+      if (!currentAgenda) {
+        console.error('❌ Agenda not found:', id);
+        return;
       }
+
+      // Convert OpenBook updates to the format expected by meetingsData
+      // IMPORTANT: Include ALL fields from the current agenda
+      const apiUpdates: any = {
+        name: updates.title !== undefined ? updates.title : currentAgenda.title,
+        description: updates.description !== undefined ? updates.description : currentAgenda.description,
+        status: updates.status !== undefined ? updates.status : (currentAgenda.status || 'draft'),
+        sort_order: updates.order !== undefined ? updates.order : currentAgenda.order,
+        presenter_id: updates.presenter_id !== undefined ? updates.presenter_id : currentAgenda.presenter_id,
+        ministry_id: updates.ministry_id !== undefined ? updates.ministry_id : currentAgenda.ministry_id,
+        cabinet_approval_required: updates.cabinet_approval_required !== undefined 
+          ? updates.cabinet_approval_required 
+          : (currentAgenda.cabinet_approval_required || false)
+      };
+
+      console.log('📤 Sending full agenda data to API:', apiUpdates);
+
+      // Use the meetingsData hook to update the agenda
+      await meetingsData.updateAgenda(id, apiUpdates, meetingId);
+      
+    } catch (error) {
+      console.error('❌ Error updating agenda:', error);
+      throw error;
     }
   };
 
   const deleteAgenda = async (id: string) => {
-    console.log('🗑️ Deleting agenda:', id);
+    if (!meetingId) {
+      console.error('❌ Meeting ID is required to delete agenda');
+      return;
+    }
+
+    try {
+      // Use the meetingsData hook to delete the agenda
+      await meetingsData.deleteAgenda(id, meetingId);
+    } catch (error) {
+      console.error('❌ Error deleting agenda:', error);
+      throw error;
+    }
+  };
+
+  const handleReorderAgendas = async (reorderedAgendas: AgendaItem[]) => {
+    if (!meetingId) return;
+
+    console.log('🔄 Reordering agendas:', reorderedAgendas);
     
-    // Remove from local state immediately
-    const agendaToDelete = agendas.find(agenda => agenda.id === id);
-    setAgendas(prev => prev.filter(agenda => agenda.id !== id));
-
-    // Delete from API
-    if (meetingId && !id.startsWith('doc-')) {
-      try {
-        // FIX: Use the correct API endpoint
-        const response = await fetch(`/api/agenda/${id}`, {
-          method: 'DELETE',
-        });
-
-        if (!response.ok) {
-          console.warn('⚠️ Failed to delete agenda via API, removed locally only');
-          // Re-add if API deletion failed
-          if (agendaToDelete) {
-            setAgendas(prev => [...prev, agendaToDelete]);
-          }
-        } else {
-          console.log('✅ Agenda deleted via API');
+    try {
+      // Update each agenda's sort_order based on new positions
+      // IMPORTANT: Send ALL fields for each agenda, not just sort_order
+      const updatePromises = reorderedAgendas.map((agenda, index) => {
+        const newOrder = index + 1;
+        
+        // Find the original agenda in the current data
+        const originalAgenda = agendas.find(a => a.id === agenda.id);
+        
+        if (!originalAgenda) {
+          console.error('❌ Original agenda not found:', agenda.id);
+          return Promise.resolve();
         }
-      } catch (error) {
-        console.error('Error deleting agenda via API:', error);
-        // Re-add if API deletion failed
-        if (agendaToDelete) {
-          setAgendas(prev => [...prev, agendaToDelete]);
+        
+        // Only update if the order actually changed
+        if (originalAgenda.order !== newOrder) {
+          console.log(`📤 Updating agenda ${agenda.id} from position ${originalAgenda.order} to ${newOrder}`);
+          
+          // Prepare update data with ALL fields from the original agenda
+          const updateData = {
+            name: originalAgenda.title,
+            description: originalAgenda.description || '',
+            status: originalAgenda.status || 'draft',
+            sort_order: newOrder, // This is the only thing that changes
+            presenter_id: originalAgenda.presenter_id || null,
+            ministry_id: originalAgenda.ministry_id || null,
+            cabinet_approval_required: originalAgenda.cabinet_approval_required || false
+          };
+
+          // Use the meetingsData hook to update each agenda with ALL fields
+          return meetingsData.updateAgenda(agenda.id, updateData, meetingId);
         }
-      }
+        return Promise.resolve();
+      });
+
+      await Promise.all(updatePromises);
+      
+      console.log('✅ All agenda items reordered successfully');
+
+      // Refresh agendas in the background to ensure consistency
+      setTimeout(() => {
+        meetingsData.fetchAgendas(meetingId, true).catch(console.error);
+      }, 500);
+      
+    } catch (error) {
+      console.error('❌ Error reordering agendas:', error);
+      throw error;
     }
   };
 
@@ -396,26 +331,11 @@ export function useOpenBook(meetingId?: string) {
     return agendas.filter(agenda => agenda.isDocument);
   };
 
-  // Debounced reorder function
-  const handleReorderAgendas = (reorderedAgendas: AgendaItem[]) => {
-    console.log('🔄 Reordering agendas:', reorderedAgendas);
-    
-    // Update local state immediately
-    setAgendas(reorderedAgendas);
-    
-    // Sync order changes with API
-    reorderedAgendas.forEach((agenda, index) => {
-      updateAgenda(agenda.id, { order: index + 1 });
-    });
-  };
-
-
-
   return {
     documents,
     agendas,
     annotations,
-    loading,
+    loading: meetingsData.loading || localLoading,
     uploadDocument,
     addAgenda,
     updateAgenda,
@@ -425,9 +345,8 @@ export function useOpenBook(meetingId?: string) {
     getDocumentByIndex,
     getDocumentAgendas,
     handleReorderAgendas,
-    refreshAgendas: fetchMeetingData,
-    // Export the new states if needed for UI feedback
-    isSyncingOrders,
-    pendingOrderUpdates
+    refreshAgendas: () => meetingId && meetingsData.fetchAgendas(meetingId, true),
+    isSyncingOrders: false,
+    pendingOrderUpdates: []
   };
 }
