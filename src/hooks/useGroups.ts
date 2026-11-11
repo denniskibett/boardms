@@ -1,89 +1,78 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
+export interface GroupMember {
+  id: string; // auth uuid
+  auth_id: string;
+  name: string;
+  email: string;
+  role?: string;
+  image?: string | null;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  users: GroupMember[];
+}
+
+/** Participant groups. `user_ids` are users' auth uuids. */
 export function useGroups() {
-  const [groups, setGroups] = useState([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  /* ----------------------------- FETCH ALL GROUPS ----------------------------- */
-  const fetchGroups = async () => {
+  const send = async (url: string, method: string, body?: unknown) => {
+    const res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (HTTP ${res.status})`);
+    return data;
+  };
+
+  const fetchGroups = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/groups");
-      const data = await res.json();
-      setGroups(data);
+      setError("");
+      const data = await send("/api/groups", "GET");
+      setGroups(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError("Failed to load groups");
+      setError(err instanceof Error ? err.message : "Failed to load groups");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const run = async (fn: () => Promise<unknown>, fallback: string) => {
+    try {
+      setLoading(true);
+      setError("");
+      await fn();
+      await fetchGroups();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallback);
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  /* ----------------------------- CREATE GROUP ----------------------------- */
-  const createGroup = async (payload: { name: string; users: any[] }) => {
-    try {
-      setLoading(true);
-      const res = await fetch("/api/groups", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      await res.json();
-      await fetchGroups();
-    } catch (err) {
-      setError("Failed to create group");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const createGroup = (payload: { name: string; user_ids?: string[] }) =>
+    run(() => send("/api/groups", "POST", payload), "Failed to create group");
 
-  /* ----------------------------- UPDATE GROUP ----------------------------- */
-  const updateGroup = async (
-    id: number,
-    payload: { name: string; users: any[] }
-  ) => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/groups/${id}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      await res.json();
-      await fetchGroups();
-    } catch (err) {
-      setError("Failed to update group");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const updateGroup = (id: number | string, payload: { name: string; user_ids?: string[] }) =>
+    run(() => send(`/api/groups/${id}`, "PUT", payload), "Failed to update group");
 
-  /* ----------------------------- DELETE GROUP ----------------------------- */
-  const deleteGroup = async (id: number) => {
-    try {
-      setLoading(true);
-      await fetch(`/api/groups/${id}`, {
-        method: "DELETE",
-      });
-      await fetchGroups();
-    } catch (err) {
-      setError("Failed to delete group");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const deleteGroup = (id: number | string) =>
+    run(() => send(`/api/groups/${id}`, "DELETE"), "Failed to delete group");
 
   useEffect(() => {
     fetchGroups();
-  }, []);
+  }, [fetchGroups]);
 
-  return {
-    groups,
-    loading,
-    error,
-    createGroup,
-    updateGroup,
-    deleteGroup,
-    reload: fetchGroups,
-  };
+  return { groups, loading, error, createGroup, updateGroup, deleteGroup, reload: fetchGroups };
 }

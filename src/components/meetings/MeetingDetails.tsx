@@ -1,132 +1,102 @@
 // src/components/meetings/MeetingDetails.tsx
 "use client";
 import React from 'react';
-import { Calendar, Clock, MapPin, Edit } from 'lucide-react';
-import { formatSystemDate } from '@/lib/utils/date-utils';
+import { CalendarDays, Clock, MapPin, User } from 'lucide-react';
+import { StatusBadge, toneForStatus } from '@/components/ui/kit';
 
 interface Meeting {
-  id: string;
+  id: string | number;
   name: string;
   type: string;
   start_at: string;
-  period: string;
-  actual_end: string;
+  period?: string | number;
+  actual_end?: string | null;
   location: string;
-  chair_id: string;
   status: string;
-  description: string;
-  colour: string;
-  created_at: string;
-  updated_at: string;
-  chair_name?: string;
-  chair_email?: string;
-  chair_role?: string;
-  chair_image?: string;
+  description?: string;
+  colour?: string;
+  chair_name?: string | null;
+  chair_role?: string | null;
 }
 
 interface MeetingDetailsProps {
   meeting: Meeting;
-  onEdit: () => void;
-  settings?: {
-    timezone: string;
-    date_format: string;
-    time_format: '12' | '24';
-  };
+  /** Header actions (e.g. the "…" menu), rendered top-right. */
+  actions?: React.ReactNode;
+  /** Kept for compatibility; prefer `actions`. */
+  onEdit?: () => void;
+  settings?: { timezone?: string; date_format?: string; time_format?: string };
 }
 
-const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, onEdit, settings }) => {
-  const calculateEndTime = () => {
-    if (!meeting?.start_at || !meeting?.period) return 'N/A';
-    
-    try {
-      const startTime = new Date(meeting.start_at);
-      const durationMinutes = parseInt(meeting.period) || 0;
-      const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
-      return formatMeetingDate(endTime.toISOString(), true);
-    } catch (error) {
-      console.error('Error calculating end time:', error);
-      return 'N/A';
-    }
-  };
+const parse = (v: string) => new Date(v.includes('T') ? v : v.replace(' ', 'T'));
 
-  const formatMeetingDate = (dateString: string, includeTime: boolean = true) => {
-    try {
-      const date = new Date(dateString);
-      
-      if (includeTime) {
-        return date.toLocaleString('en-US', {
-          timeZone: settings?.timezone || 'Africa/Nairobi',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: settings?.time_format === '12'
-        });
-      } else {
-        return date.toLocaleDateString('en-US', {
-          timeZone: settings?.timezone || 'Africa/Nairobi',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-      }
-    } catch (error) {
-      console.error('Error formatting date:', error);
-      return 'Invalid date';
-    }
-  };
+const MeetingDetails: React.FC<MeetingDetailsProps> = ({ meeting, actions, settings }) => {
+  const hour12 = settings?.time_format === '12';
+  const start = parse(meeting.start_at);
+  const end = meeting.actual_end
+    ? parse(meeting.actual_end)
+    : new Date(start.getTime() + (Number(meeting.period) || 60) * 60_000);
+  const valid = !Number.isNaN(start.getTime());
+  const time = (d: Date) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12 });
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 mb-6">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-            {meeting.name}
-          </h2>
-          
-          <div className="space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center gap-4 text-lg text-gray-700 dark:text-gray-300">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-blue-500" />
-                <span className="font-medium">Start:</span>
-                <span>{formatMeetingDate(meeting.start_at, true)}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-green-500" />
-                <span className="font-medium">End:</span>
-                <span>{calculateEndTime()}</span>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <MapPin className="w-4 h-4" />
-              <span>{meeting.location}</span>
-            </div>
-
-            {meeting.description && (
-              <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                <p className="text-gray-700 dark:text-gray-300">{meeting.description}</p>
-              </div>
-            )}
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: meeting.colour || '#3b82f6' }} />
+            <span className="text-theme-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{meeting.type}</span>
+            <StatusBadge tone={toneForStatus(meeting.status)}>{meeting.status}</StatusBadge>
           </div>
-
-          {/* Timezone Info */}
-          {settings && (
-            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-              All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
-            </div>
-          )}
+          <h1 className="break-words text-title-sm font-semibold text-gray-800 dark:text-white/90">{meeting.name}</h1>
         </div>
-        
-        <button
-          onClick={onEdit}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/30"
-        >
-          <Edit className="w-4 h-4" />
-          Edit Event Details
-        </button>
+        {actions}
       </div>
+
+      <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="flex items-start gap-3">
+          <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+          <div>
+            <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Date</dt>
+            <dd className="text-theme-sm text-gray-800 dark:text-white/90">
+              {valid ? start.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '—'}
+            </dd>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Clock className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+          <div>
+            <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Time</dt>
+            <dd className="text-theme-sm text-gray-800 dark:text-white/90">
+              {valid ? `${time(start)} – ${time(end)}` : '—'}
+              {settings?.timezone && <span className="text-gray-500 dark:text-gray-400"> ({settings.timezone})</span>}
+            </dd>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+          <div className="min-w-0">
+            <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Location</dt>
+            <dd className="break-words text-theme-sm text-gray-800 dark:text-white/90">{meeting.location || '—'}</dd>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <User className="mt-0.5 h-5 w-5 shrink-0 text-gray-400" />
+          <div className="min-w-0">
+            <dt className="text-theme-xs text-gray-500 dark:text-gray-400">Chair</dt>
+            <dd className="text-theme-sm text-gray-800 dark:text-white/90">
+              {meeting.chair_name || '—'}
+              {meeting.chair_role && <span className="text-gray-500 dark:text-gray-400"> · {meeting.chair_role}</span>}
+            </dd>
+          </div>
+        </div>
+      </dl>
+
+      {meeting.description && (
+        <p className="mt-5 rounded-xl bg-gray-50 p-4 text-theme-sm text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+          {meeting.description}
+        </p>
+      )}
     </div>
   );
 };

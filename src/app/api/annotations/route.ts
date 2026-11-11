@@ -1,22 +1,17 @@
-// app/api/annotations/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+// src/app/api/annotations/route.ts
+// Annotations are not persisted yet (no table). The previous handler returned fabricated rows;
+// it now reports that honestly instead of pretending to save.
+import { NextResponse } from 'next/server';
+import { requireAccess } from '@/lib/auth/permissions';
 
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  
-  const newAnnotation = {
-    id: Math.random().toString(36).substr(2, 9),
-    ...body,
-    created_at: new Date().toISOString(),
-    author: "Current User" // Get from auth
-  };
-
-  return NextResponse.json(newAnnotation, { status: 201 });
+export async function POST() {
+  const g = await requireAccess('agenda', 'create');
+  if (g.error) return g.error;
+  return NextResponse.json({ error: 'Annotations are not available yet' }, { status: 501 });
 }
 
-export async function DELETE(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-
-  // Delete annotation logic
-  return NextResponse.json({ success: true });
+export async function DELETE() {
+  const g = await requireAccess('agenda', 'delete');
+  if (g.error) return g.error;
+  return NextResponse.json({ error: 'Annotations are not available yet' }, { status: 501 });
 }

@@ -1,17 +1,12 @@
-// app/resources/page.tsx
-"use client";
-
-import React from 'react';
+// app/(admin)/resources/page.tsx
+import type { Metadata } from 'next';
 import ResourcesManager from '@/components/resources/ResourcesManager';
-import TestFileUpload from '@/components/TestFileUpload';
+
+export const metadata: Metadata = {
+  title: 'Resources | E-Cabinet System',
+  description: 'Cabinet document library',
+};
 
 export default function ResourcesPage() {
-  return (
-    <div className="min-h-screen bg-gray-50/30 dark:bg-gray-900/20 py-6">
-      <div className="space-y-6">
-        <TestFileUpload />
-        <ResourcesManager />
-      </div>
-    </div>
-  );
+  return <ResourcesManager />;
 }

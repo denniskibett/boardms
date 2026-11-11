@@ -30,7 +30,7 @@ export const fetchMemos = createAsyncThunk(
       if (!response.ok) throw new Error('Failed to fetch memos');
       return await response.json();
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );
@@ -43,7 +43,7 @@ export const fetchMeetings = createAsyncThunk(
       if (!response.ok) throw new Error('Failed to fetch meetings');
       return await response.json();
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue((error as Error).message);
     }
   }
 );

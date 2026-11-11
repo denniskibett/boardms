@@ -1,116 +1,261 @@
-// app/components/committees/CommitteesList.tsx
-"use client";
-import React from "react";
-import Link from "next/link";
+'use client';
 
-const committees = [
-  {
-    id: "infrastructure",
-    name: "Infrastructure & Energy Committee",
-    chair: "H.E. Deputy President",
-    members: 12,
-    activeMemos: 5,
-    nextMeeting: "2024-01-18",
-    cluster: "Infrastructure",
-  },
-  {
-    id: "finance",
-    name: "Budget & Finance Committee",
-    chair: "CS National Treasury",
-    members: 10,
-    activeMemos: 3,
-    nextMeeting: "2024-01-19",
-    cluster: "Finance",
-  },
-  {
-    id: "social",
-    name: "Social Services Committee",
-    chair: "CS Ministry of Health",
-    members: 15,
-    activeMemos: 8,
-    nextMeeting: "2024-01-22",
-    cluster: "Social Services",
-  },
-  {
-    id: "security",
-    name: "Security & Administration Committee",
-    chair: "CS Ministry of Interior",
-    members: 8,
-    activeMemos: 2,
-    nextMeeting: "2024-01-25",
-    cluster: "Security",
-  },
-  {
-    id: "development",
-    name: "National Development Council",
-    chair: "H.E. The President",
-    members: 20,
-    activeMemos: 12,
-    nextMeeting: "2024-01-30",
-    cluster: "Development",
-  },
-];
+import React, { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import {
+  Btn,
+  ConfirmDialog,
+  DataTable,
+  Field,
+  FormGrid,
+  PageHeader,
+  SelectInput,
+  SlideOver,
+  StatusBadge,
+  TextArea,
+  TextInput,
+  toneForStatus,
+  type ActionItem,
+  type Column,
+} from '@/components/ui/kit';
+import { usePermissions } from '@/hooks/usePermissions';
+import { api, formatDate } from '@/components/memos/memoOptions';
+
+interface Committee {
+  id: number;
+  name: string;
+  cluster_id: number | null;
+  cluster_name: string | null;
+  chair_title: string | null;
+  description: string | null;
+  status: string | null;
+  created_at: string;
+}
+
+const CHAIRS = ['President', 'Deputy President', 'Prime Cabinet Secretary', 'Cabinet Secretary'];
+const blank = { name: '', cluster_id: '', chair_title: 'Deputy President', description: '', status: 'active' };
 
 export default function CommitteesList() {
-  return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {committees.map((committee) => (
-        <div
-          key={committee.id}
-          className="bg-white dark:bg-gray-800 rounded-lg shadow-xs border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-start justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {committee.name}
-            </h3>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-              {committee.cluster}
-            </span>
-          </div>
-          
-          <div className="space-y-3 mb-4">
-            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-              </svg>
-              Chair: {committee.chair}
-            </div>
-            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-              </svg>
-              {committee.members} members
-            </div>
-            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              {committee.activeMemos} active memos
-            </div>
-            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-              <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-              </svg>
-              Next: {new Date(committee.nextMeeting).toLocaleDateString()}
-            </div>
-          </div>
+  const { can } = usePermissions();
+  const [rows, setRows] = useState<Committee[]>([]);
+  const [clusters, setClusters] = useState<{ id: number; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Committee | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState(blank);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [toDelete, setToDelete] = useState<Committee | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-          <div className="flex gap-2">
-            <Link
-              href={`/committees/${committee.id}`}
-              className="flex-1 text-center px-4 py-2 text-sm font-medium text-white bg-brand-500 rounded-lg hover:bg-brand-600"
-            >
-              View Committee
-            </Link>
-            <Link
-              href={`/committees/${committee.id}/members`}
-              className="flex-1 text-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-            >
-              Members
-            </Link>
-          </div>
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      setRows(await api<Committee[]>('/api/committees'));
+    } catch (e) {
+      setLoadError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const openForm = (c: Committee | null) => {
+    setEditing(c);
+    setForm(
+      c
+        ? {
+            name: c.name,
+            cluster_id: c.cluster_id ? String(c.cluster_id) : '',
+            chair_title: c.chair_title ?? '',
+            description: c.description ?? '',
+            status: c.status ?? 'active',
+          }
+        : blank,
+    );
+    setFormError(null);
+    setNameError(null);
+    setFormOpen(true);
+    if (!clusters.length) api<{ id: number; name: string }[]>('/api/committees/clusters').then(setClusters).catch(() => undefined);
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) {
+      setNameError('Name is required');
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await api(editing ? `/api/committees/${editing.id}` : '/api/committees', {
+        method: editing ? 'PUT' : 'POST',
+        body: JSON.stringify(form),
+      });
+      setFormOpen(false);
+      await load();
+    } catch (err) {
+      setFormError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api(`/api/committees/${toDelete.id}`, { method: 'DELETE' });
+      setRows((list) => list.filter((c) => c.id !== toDelete.id));
+    } catch (e) {
+      setActionError((e as Error).message);
+    } finally {
+      setDeleting(false);
+      setToDelete(null);
+    }
+  };
+
+  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+    if (k === 'name') setNameError(null);
+  };
+
+  const columns: Column<Committee>[] = [
+    {
+      key: 'name',
+      header: 'Committee',
+      sortable: true,
+      className: 'min-w-[220px] max-w-md',
+      cell: (c) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-gray-800 dark:text-white/90">{c.name}</p>
+          {c.description && <p className="line-clamp-1 text-theme-xs text-gray-500 dark:text-gray-400">{c.description}</p>}
         </div>
-      ))}
-    </div>
+      ),
+    },
+    { key: 'chair_title', header: 'Chair', sortable: true, hideBelow: 'sm', cell: (c) => c.chair_title || '—' },
+    { key: 'cluster_name', header: 'Cluster', sortable: true, hideBelow: 'md', cell: (c) => c.cluster_name || '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      cell: (c) => <StatusBadge tone={toneForStatus(c.status)}>{c.status === 'inactive' ? 'Inactive' : 'Active'}</StatusBadge>,
+    },
+    { key: 'created_at', header: 'Created', sortable: true, hideBelow: 'lg', cell: (c) => formatDate(c.created_at) },
+  ];
+
+  const actions = (c: Committee): ActionItem[] => [
+    { label: 'Edit', onClick: () => openForm(c), hidden: !can('committees', 'edit') },
+    { label: 'Delete', danger: true, onClick: () => setToDelete(c), hidden: !can('committees', 'delete') },
+  ];
+
+  return (
+    <>
+      <PageHeader
+        title="Cabinet committees"
+        description="Standing committees of cabinet and the clusters they serve."
+        actions={
+          can('committees', 'create') && (
+            <Btn onClick={() => openForm(null)}>
+              <Plus className="h-4 w-4" />
+              New committee
+            </Btn>
+          )
+        }
+      />
+
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">
+          {actionError}
+        </div>
+      )}
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(c) => c.id}
+        loading={loading}
+        error={loadError}
+        searchKeys={(c) => [c.name, c.chair_title, c.cluster_name, c.description]}
+        searchPlaceholder="Search committees…"
+        actions={actions}
+        onRowClick={can('committees', 'edit') ? (c) => openForm(c) : undefined}
+        emptyTitle="No committees yet"
+      />
+
+      <SlideOver
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        busy={saving}
+        title={editing ? 'Edit committee' : 'New committee'}
+        footer={
+          <>
+            <Btn variant="outline" onClick={() => setFormOpen(false)} disabled={saving}>
+              Cancel
+            </Btn>
+            <Btn type="submit" form="committee-form" loading={saving}>
+              {editing ? 'Save changes' : 'Create committee'}
+            </Btn>
+          </>
+        }
+      >
+        <form id="committee-form" onSubmit={save} className="space-y-5">
+          {formError && (
+            <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">
+              {formError}
+            </div>
+          )}
+          <FormGrid>
+            <Field label="Name" required error={nameError}>
+              <TextInput value={form.name} onChange={set('name')} placeholder="e.g. Infrastructure & Energy Committee" />
+            </Field>
+            <Field label="Chair" span={1}>
+              <SelectInput
+                value={form.chair_title}
+                onChange={set('chair_title')}
+                options={[...new Set([...CHAIRS, form.chair_title].filter(Boolean))].map((c) => ({ value: c, label: c }))}
+                placeholder="Select chair"
+              />
+            </Field>
+            <Field label="Cluster" span={1}>
+              <SelectInput
+                value={form.cluster_id}
+                onChange={set('cluster_id')}
+                options={clusters.map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="None"
+              />
+            </Field>
+            <Field label="Status" span={1}>
+              <SelectInput
+                value={form.status}
+                onChange={set('status')}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' },
+                ]}
+              />
+            </Field>
+            <Field label="Description">
+              <TextArea value={form.description} onChange={set('description')} rows={4} placeholder="Mandate of the committee" />
+            </Field>
+          </FormGrid>
+        </form>
+      </SlideOver>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Delete committee?"
+        message={toDelete ? <>“{toDelete.name}” will be permanently deleted. This cannot be undone.</> : null}
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setToDelete(null)}
+      />
+    </>
   );
 }

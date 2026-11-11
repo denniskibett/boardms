@@ -1,4 +1,4 @@
-// src/hooks/useResources.ts - UPDATED
+// src/hooks/useResources.ts — resources state (Redux) backed by the guarded /api/resources routes.
 import { useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
 import {
@@ -11,94 +11,53 @@ import {
   uploadFile,
   deleteFile,
   clearError,
+  type ResourceInput,
 } from '@/lib/store/slices/resourcesSlice';
 
 export function useResources() {
   const dispatch = useAppDispatch();
-  const { resources, categories, files, loading, error, lastFetched } = useAppSelector(
-    (state) => state.resources
+  const { resources, categories, files, loading, error } = useAppSelector((state) => state.resources);
+
+  const doFetchResources = useCallback(
+    (filters?: { year?: number; typeId?: number }) => dispatch(fetchResources(filters)),
+    [dispatch],
   );
+  const doFetchCategories = useCallback(() => dispatch(fetchCategories()), [dispatch]);
 
-  // Memoized functions for better performance
-  const memoizedFetchResources = useCallback(
-    (filters?: { year?: number; type?: string }) => {
-      return dispatch(fetchResources(filters));
-    },
-    [dispatch]
+  // Mutations resolve with the saved row and reject with the server's error message.
+  const doCreateResource = useCallback((data: ResourceInput) => dispatch(createResource(data)).unwrap(), [dispatch]);
+  const doUpdateResource = useCallback(
+    (id: number, updates: Partial<ResourceInput>) => dispatch(updateResource({ id, updates })).unwrap(),
+    [dispatch],
   );
-
-  const memoizedFetchCategories = useCallback(() => {
-    dispatch(fetchCategories());
-  }, [dispatch]);
-
-  const memoizedCreateResource = useCallback(
-    (resourceData: any) => dispatch(createResource(resourceData)),
-    [dispatch]
+  const doDeleteResource = useCallback((id: number) => dispatch(deleteResource(id)).unwrap(), [dispatch]);
+  const doFetchResourceFiles = useCallback((resourceId: number) => dispatch(fetchResourceFiles(resourceId)).unwrap(), [dispatch]);
+  const doUploadFile = useCallback(
+    (resourceId: number, file: File, ministryId?: number, displayName?: string) =>
+      dispatch(uploadFile({ resourceId, file, ministryId, displayName: displayName || file.name })).unwrap(),
+    [dispatch],
   );
-
-  const memoizedUpdateResource = useCallback(
-    (id: number, updates: any) => dispatch(updateResource({ id, updates })),
-    [dispatch]
+  const doDeleteFile = useCallback(
+    (resourceId: number, fileId: number) => dispatch(deleteFile({ resourceId, fileId })).unwrap(),
+    [dispatch],
   );
-
-  const memoizedDeleteResource = useCallback(
-    (id: number) => dispatch(deleteResource(id)),
-    [dispatch]
-  );
-
-  const memoizedFetchResourceFiles = useCallback(
-    (resourceId: number) => {
-      return dispatch(fetchResourceFiles(resourceId));
-    },
-    [dispatch]
-  );
-
-  const memoizedUploadFile = useCallback(
-    async (resourceId: number, file: File, ministryId?: number, displayName?: string) => {
-      try {
-        const result = await dispatch(uploadFile({ 
-          resourceId, 
-          file, 
-          ministryId, 
-          displayName: displayName || file.name 
-        })).unwrap();
-        
-        return result;
-      } catch (error) {
-        console.error('Upload failed:', error);
-        throw error;
-      }
-    },
-    [dispatch]
-  );
-
-  const memoizedDeleteFile = useCallback(
-    (fileId: number) => dispatch(deleteFile(fileId)),
-    [dispatch]
-  );
-
-  const memoizedClearError = useCallback(() => dispatch(clearError()), [dispatch]);
+  const doClearError = useCallback(() => dispatch(clearError()), [dispatch]);
 
   return {
-    // State
     resources,
     categories,
-    files: files,
+    files,
     loading,
     error,
-    
-    // Actions
-    fetchResources: memoizedFetchResources,
-    fetchCategories: memoizedFetchCategories,
-    createResource: memoizedCreateResource,
-    updateResource: memoizedUpdateResource,
-    deleteResource: memoizedDeleteResource,
-    fetchResourceFiles: memoizedFetchResourceFiles,
-    uploadFile: memoizedUploadFile,
-    deleteFile: memoizedDeleteFile,
-    clearError: memoizedClearError,
-    
-    // Helper
-    refetch: () => memoizedFetchResources(),
+    fetchResources: doFetchResources,
+    fetchCategories: doFetchCategories,
+    createResource: doCreateResource,
+    updateResource: doUpdateResource,
+    deleteResource: doDeleteResource,
+    fetchResourceFiles: doFetchResourceFiles,
+    uploadFile: doUploadFile,
+    deleteFile: doDeleteFile,
+    clearError: doClearError,
+    refetch: () => doFetchResources(),
   };
 }

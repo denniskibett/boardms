@@ -1,84 +1,38 @@
-// src/app/api/users/[id]/role/route.ts
+// PUT /api/users/[id]/role — { role: roleKey | role name }. Needs users.edit.
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAccess } from '@/lib/auth/permissions';
 import { supabaseServer } from '@/lib/supabase/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
+import { FULL_COLUMNS, bad, findUser, guardRoleAssignment, guardTarget, isSelf, resolveRole } from '../../_shared';
 
-// PUT /api/users/[id]/role - Update user's role
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const g = await requireAccess('users', 'edit');
+  if (g.error) return g.error;
+  const { id } = await params;
 
-    const { id } = await params;
-    const body = await request.json();
-    const { role } = body;
+  const user = await findUser(id);
+  if (!user) return bad('User not found', 404);
+  if (isSelf(g.user, user)) return bad('You cannot change your own role');
+  const denied = guardTarget(g.user, user);
+  if (denied) return denied;
 
-    if (!role) {
-      return NextResponse.json({ error: 'Role is required' }, { status: 400 });
-    }
+  const { role: input } = await request.json().catch(() => ({}));
+  const role = await resolveRole(input);
+  if (!role) return bad('Choose a valid role');
+  const r = guardRoleAssignment(g.user, role.role_key);
+  if (r) return r;
 
-    const supabase = supabaseServer();
-    
-    // Check if user is admin
-    const currentUserRole = session.user?.role?.toLowerCase().replace(/\s+/g, '_');
-    const canAssignRoles = currentUserRole === 'admin' || 
-                          currentUserRole === 'sysadmin' || 
-                          currentUserRole === 'cabinet_secretariat';
-
-    if (!canAssignRoles) {
-      return NextResponse.json({ error: 'Forbidden: You do not have permission to assign roles' }, { status: 403 });
-    }
-
-    // Get role information
-    const roleKey = role.toLowerCase().replace(/\s+/g, '_');
-    const { data: roleInfo } = await supabase
-      .from('system_roles')
-      .select('*')
-      .eq('role_key', roleKey)
-      .single();
-
-    if (!roleInfo) {
-      return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
-    }
-
-    // Update user's role
-    const { data: updatedUser, error } = await supabase
-      .from('users')
-      .update({ 
-        role: roleInfo.name,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error updating user role:', error);
-      return NextResponse.json({ error: 'Failed to update user role' }, { status: 500 });
-    }
-
-    // Log the action
-    await supabase
-      .from('role_audit_logs')
-      .insert({
-        action: 'USER_ROLE_CHANGE',
-        changes: { user_id: id, old_role: updatedUser.role, new_role: roleInfo.name },
-        performed_by: session.user.id
-      });
-
-    return NextResponse.json({
-      success: true,
-      user: updatedUser,
-      role: roleInfo
-    });
-  } catch (error) {
-    console.error('Error in PUT /api/users/[id]/role:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  const { data, error } = await supabaseServer()
+    .from('users')
+    .update({ role: role.name, updated_at: new Date().toISOString() })
+    .eq('id', user.id)
+    .select(FULL_COLUMNS)
+    .single();
+  if (error) {
+    console.error('PUT /api/users/[id]/role:', error.message);
+    return bad(`Failed to change role: ${error.message}`, 500);
   }
+
+  await logAudit(g.user, 'USER_ROLE_CHANGE', 'user', user.id, { email: user.email, from: user.role, to: role.name });
+  return NextResponse.json(data);
 }

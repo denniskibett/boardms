@@ -1,63 +1,45 @@
+// src/app/api/committees/route.ts — cabinet committees list (GET) and create (POST).
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { supabaseServer } from '@/lib/supabase/server';
+import { requireAccess } from '@/lib/auth/permissions';
+import { lookup, errorMessage } from '../memos/_lib/helpers';
+import { committeeFields } from './_fields';
 
-export async function GET(request: NextRequest) {
+const CHAIR_ORDER: Record<string, number> = { President: 1, 'Deputy President': 2 };
+
+export async function GET() {
+  const g = await requireAccess('committees', 'view');
+  if (g.error) return g.error;
+
   try {
-    const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type'); // 'my' or 'all'
+    const { data, error } = await supabaseServer().from('cabinet_committees').select('*').order('name');
+    if (error) throw error;
 
-    let queryStr = `
-      SELECT 
-        cc.id,
-        cc.name,
-        cc.cluster_id,
-        cc.chair_title,
-        cc.description,
-        cc.status,
-        cc.created_at,
-        cc.updated_at,
-        c.name as cluster_name,
-        COUNT(DISTINCT m.id) as active_meetings,
-        COUNT(DISTINCT a.id) as active_memos
-      FROM cabinet_committees cc
-      LEFT JOIN clusters c ON cc.cluster_id = c.id
-      LEFT JOIN meetings m ON m.committee_id = cc.id AND m.status IN ('scheduled', 'in_progress')
-      LEFT JOIN agenda ag ON ag.meeting_id = m.id
-      LEFT JOIN gov_memos gm ON ag.memo_id = gm.id AND gm.status IN ('submitted', 'under_review')
-      LEFT JOIN agenda a ON a.meeting_id = m.id
-    `;
-
-    const params: any[] = [];
-
-    // For "my" committees, we would join with user assignments
-    // This is a simplified version - you'd need a user_committees table
-    if (type === 'my') {
-      queryStr += ` WHERE cc.id IN (
-        SELECT committee_id FROM user_committees WHERE user_id = $1
-      )`;
-      // params.push(userId); // You'd get this from session
-    }
-
-    queryStr += `
-      GROUP BY cc.id, c.name
-      ORDER BY 
-        CASE cc.chair_title
-          WHEN 'President' THEN 1
-          WHEN 'Deputy President' THEN 2
-          ELSE 3
-        END,
-        cc.name
-    `;
-
-    const committees = await query(queryStr, params);
-
-    return NextResponse.json(committees.rows);
-    
-  } catch (error: unknown) {
+    const clusters = await lookup<{ id: number; name: string }>('clusters', (data ?? []).map((c) => c.cluster_id));
+    const rows = (data ?? [])
+      .map((c) => ({ ...c, cluster_name: c.cluster_id ? clusters.get(c.cluster_id)?.name ?? null : null }))
+      .sort((a, b) => (CHAIR_ORDER[a.chair_title] ?? 3) - (CHAIR_ORDER[b.chair_title] ?? 3));
+    return NextResponse.json(rows);
+  } catch (error) {
     console.error('Error fetching committees:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch committees' }, 
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch committees', message: errorMessage(error) }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const g = await requireAccess('committees', 'create');
+  if (g.error) return g.error;
+
+  try {
+    const row = committeeFields(await request.json());
+    if (!row.name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    if (!row.status) row.status = 'active';
+
+    const { data, error } = await supabaseServer().from('cabinet_committees').insert(row).select().single();
+    if (error) throw error;
+    return NextResponse.json(data, { status: 201 });
+  } catch (error) {
+    console.error('Error creating committee:', error);
+    return NextResponse.json({ error: errorMessage(error, 'Failed to create committee') }, { status: 500 });
   }
 }

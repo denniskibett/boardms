@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PageHeader } from "@/components/ui/kit";
 import MeetingMinutesList from "@/components/meetings/MeetingMinutesList";
 
 export const metadata: Metadata = {
@@ -9,16 +10,7 @@ export const metadata: Metadata = {
 export default function MeetingMinutesPage() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Meeting Minutes
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Access minutes from previous meetings
-          </p>
-        </div>
-      </div>
+      <PageHeader title="Meeting minutes" description="Records of held meetings: agenda, participants and decisions." />
       <MeetingMinutesList />
     </div>
   );

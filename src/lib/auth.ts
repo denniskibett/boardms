@@ -18,7 +18,6 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          console.log('🔐 Attempting Supabase auth for:', credentials.email);
           
           // Use Supabase Auth for authentication
           const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -36,7 +35,6 @@ export const authOptions: NextAuthOptions = {
             return null
           }
 
-          console.log('✅ Supabase auth successful for:', authData.user.email);
 
           // Get user profile from custom table
           const { data: userProfile, error: profileError } = await supabase
@@ -48,7 +46,6 @@ export const authOptions: NextAuthOptions = {
           // If profile doesn't exist, create it
           let profile = userProfile
           if (profileError || !userProfile) {
-            console.log('🔄 Creating user profile in custom table...');
             const { data: newProfile, error: insertError } = await supabase
               .from('users')
               .insert([
@@ -73,6 +70,12 @@ export const authOptions: NextAuthOptions = {
               console.log('✅ User profile created');
             }
           } else {
+            // Only active accounts may sign in (suspended / inactive / pending are refused).
+            const status = String(userProfile.status || 'active').toLowerCase();
+            if (status !== 'active') {
+              console.warn('Sign-in refused for non-active account');
+              return null;
+            }
             // Update last login
             await supabase
               .from('users')
@@ -85,13 +88,10 @@ export const authOptions: NextAuthOptions = {
           
           // If we have a local image in the database, use it instead of external
           if (profile?.image && !profile.image.startsWith('http')) {
-            console.log('🖼️ Using local image from database:', profile.image);
             userImage = profile.image;
           } else if (authData.user.user_metadata?.avatar_url) {
-            console.log('🖼️ Using external avatar URL:', authData.user.user_metadata.avatar_url);
             userImage = authData.user.user_metadata.avatar_url;
           } else if (authData.user.user_metadata?.picture) {
-            console.log('🖼️ Using external picture URL:', authData.user.user_metadata.picture);
             userImage = authData.user.user_metadata.picture;
           }
 
@@ -103,7 +103,6 @@ export const authOptions: NextAuthOptions = {
             image: userImage, // This will prefer local images
           };
 
-          console.log('✅ Returning user data:', userData);
           return userData;
 
         } catch (error) {
@@ -119,8 +118,6 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async jwt({ token, user, trigger, session }) {
-      console.log('🔄 JWT callback - Token email:', token.email);
-      console.log('🔄 JWT callback - User email:', user?.email);
       
       if (user) {
         token.role = user.role
@@ -129,20 +126,21 @@ export const authOptions: NextAuthOptions = {
         if (user.image) {
           token.picture = user.image;
         }
-        console.log('✅ JWT updated with user data');
       }
       
-      // Update token if session is updated
+      // Session updates from the browser may only change display fields.
+      // Never copy role/id/email from the client — that would let a user grant themselves any role.
       if (trigger === "update" && session) {
-        token = { ...token, ...session }
-        console.log('✅ JWT updated with session data');
+        const s = (session as { user?: { name?: string; image?: string }; name?: string; image?: string });
+        const name = s.user?.name ?? s.name;
+        const image = s.user?.image ?? s.image;
+        if (typeof name === 'string') token.name = name;
+        if (typeof image === 'string') token.picture = image;
       }
       
       return token
     },
     async session({ token, session }) {
-      console.log('🔄 Session callback - Token email:', token.email);
-      console.log('🔄 Session callback - Session user email:', session.user?.email);
       
       if (token) {
         session.user.id = token.id as string
@@ -150,16 +148,12 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email as string
         session.user.name = token.name as string
         session.user.image = token.picture as string // Use the image from token
-        console.log('✅ Session populated with token data');
       }
       
-      console.log('🎉 Final session object:', session);
       return session
     },
 
     async redirect({ url, baseUrl }) {
-      console.log('🔄 Redirect callback - URL:', url);
-      console.log('🔄 Redirect callback - Base URL:', baseUrl);
       
       // ✅ FIX: After successful authentication, redirect to home page
       if (url.includes('/api/auth/callback') || url.includes('/api/auth/session?')) {
@@ -187,8 +181,7 @@ export const authOptions: NextAuthOptions = {
     }
   },
   pages: {
-    signIn: '/auth/signin',
-    signUp: '/auth/signup', 
+    signIn: '/auth/signin', 
     error: '/dashboard',
   },
   debug: process.env.NODE_ENV === 'development',

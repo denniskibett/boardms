@@ -2,7 +2,6 @@
 import { Outfit } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
-import SyncUserData from '@/components/SyncUserData';
 import React from 'react';
 import { getSystemSettingsServer } from '@/lib/server/systemSettings';
 

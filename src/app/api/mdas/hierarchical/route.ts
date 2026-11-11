@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabaseServer } from '@/lib/supabase'
-import { HierarchicalData } from '@/types/mda'
+import { NextResponse } from 'next/server'
+import { requireAccess } from '@/lib/auth/permissions'
+import { supabaseServer } from '@/lib/supabase/server'
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+export async function GET(): Promise<NextResponse> {
+  const g = await requireAccess('mdas', 'view')
+  if (g.error) return g.error
   try {
     const supabase = supabaseServer()
 
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       const departments = ministry.state_departments || []
       totalDepartments += departments.length
       
-      departments.forEach(dept => {
+      departments.forEach((dept: { agencies?: unknown[] }) => {
         totalAgencies += dept.agencies?.length || 0
       })
 
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }) || []
 
-    const response: HierarchicalData = {
+    const response = {
       ministries: ministriesWithData,
       totalAgencies,
       totalDepartments

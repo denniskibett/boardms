@@ -83,7 +83,7 @@ export const fetchUserProfile = createAsyncThunk(
           phone: user.user_metadata?.phone,
           last_login: user.last_sign_in_at,
           created_at: user.created_at,
-          updated_at: user.updated_at,
+          updated_at: user.updated_at ?? user.created_at,
         };
 
         console.log('✅ Using fallback user data:', fallbackUser.email);

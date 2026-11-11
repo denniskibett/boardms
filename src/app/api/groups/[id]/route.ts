@@ -1,159 +1,99 @@
-import { NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+// src/app/api/groups/[id]/route.ts — participant groups (group_users.user_id holds the user's auth uuid)
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/server';
+import { requireAccess } from '@/lib/auth/permissions';
 
-// Define types for the route parameters
-interface RouteParams {
-  params: {
-    id: string;
-  };
+type Ctx = { params: Promise<{ id: string }> };
+
+/** Accepts `user_ids: string[]` or legacy `users: [{ user_id }]`. */
+function memberIds(body: any): string[] {
+  if (Array.isArray(body.user_ids)) return body.user_ids.map(String);
+  if (Array.isArray(body.users)) return body.users.map((u: any) => String(u?.user_id ?? u?.id ?? u)).filter(Boolean);
+  return [];
 }
 
-// Define types for the user in the pivot table
-interface PivotUser {
-  user_id: number;
-  mandatory_id: number;
-}
-
-// Define types for the request body
-interface UpdateGroupRequestBody {
-  name: string;
-  users: PivotUser[];
-}
-
-/* -------------------------------------------------------------
-   GET /api/groups/[id]
----------------------------------------------------------------- */
-export async function GET(req: Request, { params }: RouteParams) {
-  const { id } = params;
+export async function GET(_req: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'view');
+  if (g.error) return g.error;
 
   try {
-    const group = await query(
-      `
-      SELECT g.id, g.name, g.created_at, g.updated_at,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'user_id', pu.user_id,
-              'mandatory_id', pu.mandatory_id,
-              'mandatory_status', c.name
-            )
-          ) FILTER (WHERE pu.user_id IS NOT NULL),
-        '[]') AS users
-      FROM groups g
-      LEFT JOIN groups_users_pivot pu ON g.id = pu.group_id
-      LEFT JOIN categories c ON c.id = pu.mandatory_id AND c.type = 'participation_status'
-      WHERE g.id = $1
-      GROUP BY g.id;
-    `,
-      [id]
-    );
+    const { id } = await params;
+    const supabase = supabaseServer();
+    const { data: group, error } = await supabase.from('groups').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!group) return NextResponse.json({ error: 'Group not found' }, { status: 404 });
 
-    return NextResponse.json(group.rows[0] || {});
+    const { data: links } = await supabase.from('group_users').select('user_id').eq('group_id', id);
+    const uuids = (links || []).map((l) => l.user_id).filter(Boolean);
+    const { data: users } = uuids.length
+      ? await supabase.from('users').select('auth_id, name, email, role, image').in('auth_id', uuids)
+      : { data: [] as any[] };
+
+    return NextResponse.json({
+      id: String(group.id),
+      name: group.name,
+      users: (users || []).map((u: any) => ({ id: u.auth_id, ...u })),
+    });
   } catch (error) {
     console.error('Error fetching group:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch group' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch group' }, { status: 500 });
   }
 }
 
-/* -------------------------------------------------------------
-   PUT /api/groups/[id] → update group + pivot
-   BODY:
-   {
-     "name": "Updated Name",
-     "users": [
-       { "user_id": 1, "mandatory_id": 3 },
-       { "user_id": 8, "mandatory_id": 5 }
-     ]
-   }
----------------------------------------------------------------- */
-export async function PUT(req: Request, { params }: RouteParams) {
-  const { id } = params;
+export async function PUT(req: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'edit');
+  if (g.error) return g.error;
 
   try {
-    const { name, users } = await req.json() as UpdateGroupRequestBody;
+    const { id } = await params;
+    const body = await req.json();
+    const name = String(body.name || '').trim();
+    if (!name) return NextResponse.json({ error: 'Group name is required' }, { status: 400 });
 
-    if (!name) {
-      return NextResponse.json(
-        { error: 'Group name is required' },
-        { status: 400 }
-      );
-    }
+    const supabase = supabaseServer();
+    const { data: updated, error } = await supabase
+      .from('groups')
+      .update({ name, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!updated) return NextResponse.json({ error: 'Group not found' }, { status: 404 });
 
-    // 1. Update name
-    await query(`UPDATE groups SET name = $1, updated_at = NOW() WHERE id = $2`, [name, id]);
-
-    // 2. Clear old pivot items
-    await query(`DELETE FROM groups_users_pivot WHERE group_id = $1`, [id]);
-
-    // 3. Insert new pivot entries
-    if (Array.isArray(users) && users.length > 0) {
-      // Validate users array
-      const validUsers = users.filter(user => 
-        user.user_id && user.mandatory_id
-      );
-
-      if (validUsers.length > 0) {
-        const values = validUsers
-          .map((_, index) => `($1, $${index * 2 + 2}, $${index * 2 + 3})`)
-          .join(',');
-
-        const paramsArray = [
-          id,
-          ...validUsers.flatMap((u) => [u.user_id, u.mandatory_id]),
-        ];
-
-        await query(
-          `INSERT INTO groups_users_pivot (group_id, user_id, mandatory_id) VALUES ${values}`,
-          paramsArray
-        );
+    if (body.user_ids !== undefined || body.users !== undefined) {
+      const ids = memberIds(body);
+      const { error: delError } = await supabase.from('group_users').delete().eq('group_id', id);
+      if (delError) throw delError;
+      if (ids.length) {
+        const { error: insError } = await supabase
+          .from('group_users')
+          .insert(ids.map((user_id) => ({ group_id: Number(id), user_id })));
+        if (insError) throw insError;
       }
     }
 
     return NextResponse.json({ message: 'Group updated successfully' });
   } catch (error) {
     console.error('Error updating group:', error);
-    return NextResponse.json(
-      { error: 'Failed to update group' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update group' }, { status: 500 });
   }
 }
 
-/* -------------------------------------------------------------
-   DELETE /api/groups/[id]
----------------------------------------------------------------- */
-export async function DELETE(req: Request, { params }: RouteParams) {
-  const { id } = params;
+export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'delete');
+  if (g.error) return g.error;
 
   try {
-    await query("BEGIN");
-
-    // Check if group exists
-    const groupExists = await query('SELECT id FROM groups WHERE id = $1', [id]);
-    
-    if (groupExists.rows.length === 0) {
-      await query("ROLLBACK");
-      return NextResponse.json(
-        { error: 'Group not found' },
-        { status: 404 }
-      );
-    }
-
-    await query(`DELETE FROM groups_users_pivot WHERE group_id = $1`, [id]);
-    await query(`DELETE FROM groups WHERE id = $1`, [id]);
-
-    await query("COMMIT");
-
-    return NextResponse.json({ message: "Group deleted successfully" });
+    const { id } = await params;
+    const supabase = supabaseServer();
+    const { error: linkError } = await supabase.from('group_users').delete().eq('group_id', id);
+    if (linkError) throw linkError;
+    const { data, error } = await supabase.from('groups').delete().eq('id', id).select('id');
+    if (error) throw error;
+    if (!data?.length) return NextResponse.json({ error: 'Group not found' }, { status: 404 });
+    return NextResponse.json({ message: 'Group deleted successfully' });
   } catch (error) {
-    await query("ROLLBACK");
-    console.error("Error deleting group:", error);
-    return NextResponse.json(
-      { error: "Failed to delete group" },
-      { status: 500 }
-    );
+    console.error('Error deleting group:', error);
+    return NextResponse.json({ error: 'Failed to delete group' }, { status: 500 });
   }
 }

@@ -71,14 +71,12 @@ export function useMeetings(options: UseMeetingsOptions = {}) {
       if (useCache && !skipCache && isCacheValid(cacheKey)) {
         const cached = meetingsCache.get(cacheKey);
         if (cached) {
-          console.log('📦 Using cached meetings data:', cacheKey);
           setMeetings(cached.data);
           setLoading(false);
           return;
         }
       }
       
-      console.log('🌐 Fetching fresh meetings data:', cacheKey);
       const params = new URLSearchParams();
       if (date) params.append('date', date);
       if (committee) params.append('committee', committee);
@@ -179,36 +177,32 @@ export function useMeetings(options: UseMeetingsOptions = {}) {
   };
 }
 
-// Also export a hook for stats
-export function useMeetingsStats() {
-  const [stats, setStats] = useState({
-    today: 0,
-    thisWeek: 0,
-    thisMonth: 0,
-    total: 0,
-    byType: {},
-    byStatus: {}
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export interface MeetingStats {
+  today: number;
+  thisWeek: number;
+  thisMonth: number;
+  total: number;
+  byType: Record<string, number>;
+  byStatus: Record<string, number>;
+}
 
-  const fetchStats = useCallback(async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/meetings/stats');
-      if (!response.ok) throw new Error('Failed to fetch stats');
-      const data = await response.json();
-      setStats(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch stats');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+/** Counts derived from an already-loaded meetings list (there is no /api/meetings/stats endpoint). */
+export function computeMeetingStats(meetings: Meeting[]): MeetingStats {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setDate(startOfDay.getDate() - ((startOfDay.getDay() + 6) % 7)); // Monday
+  const endOfWeek = new Date(startOfWeek.getTime() + 7 * 86_400_000);
+  const endOfDay = new Date(startOfDay.getTime() + 86_400_000);
 
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
-
-  return { stats, loading, error, refetch: fetchStats };
+  const stats: MeetingStats = { today: 0, thisWeek: 0, thisMonth: 0, total: meetings.length, byType: {}, byStatus: {} };
+  for (const m of meetings) {
+    const d = new Date(m.start_at);
+    if (d >= startOfDay && d < endOfDay) stats.today++;
+    if (d >= startOfWeek && d < endOfWeek) stats.thisWeek++;
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) stats.thisMonth++;
+    stats.byType[m.type || 'unknown'] = (stats.byType[m.type || 'unknown'] || 0) + 1;
+    stats.byStatus[m.status || 'unknown'] = (stats.byStatus[m.status || 'unknown'] || 0) + 1;
+  }
+  return stats;
 }

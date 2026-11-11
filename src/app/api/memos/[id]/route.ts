@@ -1,262 +1,173 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { query } from "@/lib/db";
+// src/app/api/memos/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseServer } from '@/lib/supabase/server';
+import { requireAccess, userCan } from '@/lib/auth/permissions';
+import { affectedRows, dbUserId, enrichMemos, errorMessage, toInt } from '../_lib/helpers';
 
-/**
- * =========================
- * GET /api/memos/[id]
- * =========================
- */
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+type Ctx = { params: Promise<{ id: string }> };
+
+/** Statuses only an approver may set. */
+const APPROVER_STATUSES = ['under_review', 'approved', 'rejected'];
+const ALL_STATUSES = ['draft', 'submitted', ...APPROVER_STATUSES];
+
+async function loadMemo(id: number) {
+  const { data, error } = await supabaseServer().from('gov_memos').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/** GET /api/memos/[id] */
+export async function GET(_request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('memos', 'view');
+  if (g.error) return g.error;
+
   try {
-    const result = await query(
-      `
-      SELECT 
-        gm.*,
-        m.name AS ministry_name,
-        m.acronym AS ministry_acronym,
-        sd.name AS state_department_name,
-        a.name AS agency_name,
-        u.name AS creator_name,
-        u.email AS creator_email
-      FROM gov_memos gm
-      LEFT JOIN ministries m ON gm.ministry_id = m.id
-      LEFT JOIN state_departments sd ON gm.state_department_id = sd.id
-      LEFT JOIN agencies a ON gm.agency_id = a.id
-      LEFT JOIN users u ON gm.created_by = u.id
-      WHERE gm.id = $1
-      `,
-      [params.id]
-    );
+    const id = toInt((await params).id);
+    if (!id) return NextResponse.json({ error: 'Invalid memo id' }, { status: 400 });
 
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Memo not found" }, { status: 404 });
-    }
+    const memo = await loadMemo(id);
+    if (!memo) return NextResponse.json({ error: 'Memo not found' }, { status: 404 });
 
-    // Fetch affected entities
-    const affectedEntities = await query(
-      `
-      SELECT 
-        entity_type,
-        COALESCE(ministry_id, state_department_id, agency_id) AS entity_id
-      FROM memo_affected_entities 
-      WHERE memo_id = $1
-      `,
-      [params.id]
-    );
+    const { data: entities } = await supabaseServer()
+      .from('memo_affected_entities')
+      .select('entity_type, ministry_id, state_department_id, agency_id')
+      .eq('memo_id', id);
 
-    const memo = {
-      ...result.rows[0],
-      affected_entities: affectedEntities.rows.map(
-        (row) => `${row.entity_type}_${row.entity_id}`
+    const [enriched] = await enrichMemos([memo]);
+    return NextResponse.json({
+      ...enriched,
+      affected_entities: (entities ?? []).map(
+        (e) => `${e.entity_type}_${e.ministry_id ?? e.state_department_id ?? e.agency_id}`,
       ),
-    };
-
-    return NextResponse.json(memo);
-  } catch (error: any) {
-    console.error("❌ Error fetching memo:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to fetch memo" },
-      { status: 500 }
-    );
+    });
+  } catch (error) {
+    console.error('Error fetching memo:', error);
+    return NextResponse.json({ error: errorMessage(error, 'Failed to fetch memo') }, { status: 500 });
   }
 }
 
-/**
- * =========================
- * PUT /api/memos/[id]
- * =========================
- */
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions);
+/** PUT /api/memos/[id] — edit content (owner, or an approver). */
+export async function PUT(request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('memos', 'edit');
+  if (g.error) return g.error;
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const id = toInt((await params).id);
+    if (!id) return NextResponse.json({ error: 'Invalid memo id' }, { status: 400 });
+
+    const existing = await loadMemo(id);
+    if (!existing) return NextResponse.json({ error: 'Memo not found' }, { status: 404 });
+
+    const uid = await dbUserId(g.user);
+    const isApprover = userCan(g.user, 'memos', 'approve');
+    if (existing.created_by !== uid && !isApprover) {
+      return NextResponse.json({ error: 'You can only edit memos you created' }, { status: 403 });
     }
 
     const body = await request.json();
-    console.log("🟢 Update request body:", body);
-    console.log("🟢 Authenticated user:", session.user);
-
-    const {
-      name,
-      summary,
-      body: memoBody,
-      status,
-      memo_type,
-      priority,
-      ministry_id,
-      state_department_id,
-      agency_id,
-      affected_entities = [],
-    } = body;
-
-    // Check if memo exists
-    const existingMemo = await query(
-      "SELECT created_by FROM gov_memos WHERE id = $1",
-      [params.id]
-    );
-
-    if (existingMemo.rows.length === 0) {
-      return NextResponse.json({ error: "Memo not found" }, { status: 404 });
+    const status: string | undefined = body.status;
+    if (status && !ALL_STATUSES.includes(status)) {
+      return NextResponse.json({ error: `Unknown status "${status}"` }, { status: 400 });
+    }
+    if (status && status !== existing.status && APPROVER_STATUSES.includes(status) && !isApprover) {
+      return NextResponse.json({ error: 'Forbidden: requires memos.approve' }, { status: 403 });
     }
 
-    // Only allow creator or admin
-    if (
-      existingMemo.rows[0].created_by !== session.user.id &&
-      session.user.role !== "admin"
-    ) {
-      return NextResponse.json(
-        { error: "Unauthorized to update this memo" },
-        { status: 403 }
-      );
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: uid };
+    for (const key of ['name', 'summary', 'memo_type', 'priority'] as const) {
+      if (body[key] !== undefined && body[key] !== '') update[key] = body[key];
+    }
+    if (body.body !== undefined && body.body !== '') update.body = body.body;
+    if (body.ministry_id !== undefined) update.ministry_id = toInt(body.ministry_id);
+    if (body.state_department_id !== undefined) update.state_department_id = toInt(body.state_department_id);
+    if (body.agency_id !== undefined) update.agency_id = toInt(body.agency_id);
+    if (status) {
+      update.status = status;
+      if (status === 'submitted' && !existing.submitted_at) update.submitted_at = new Date().toISOString();
     }
 
-    const result = await query(
-      `
-      UPDATE gov_memos 
-      SET 
-        name = COALESCE($1, name), 
-        summary = COALESCE($2, summary), 
-        body = COALESCE($3, body), 
-        status = COALESCE($4, status), 
-        memo_type = COALESCE($5, memo_type), 
-        priority = COALESCE($6, priority),
-        ministry_id = $7,
-        state_department_id = $8,
-        agency_id = $9,
-        updated_at = CURRENT_TIMESTAMP,
-        submitted_at = CASE 
-          WHEN $4 = 'submitted' AND submitted_at IS NULL THEN CURRENT_TIMESTAMP 
-          ELSE submitted_at 
-        END
-      WHERE id = $10
-      RETURNING *
-      `,
-      [
-        name || null,
-        summary || null,
-        memoBody || null,
-        status || null,
-        memo_type || null,
-        priority || null,
-        ministry_id ? parseInt(ministry_id) : null,
-        state_department_id ? parseInt(state_department_id) : null,
-        agency_id ? parseInt(agency_id) : null,
-        params.id,
-      ]
-    );
+    const supabase = supabaseServer();
+    const { data: memo, error } = await supabase.from('gov_memos').update(update).eq('id', id).select().single();
+    if (error) throw error;
 
-    if (result.rows.length === 0) {
-      return NextResponse.json({ error: "Memo not found" }, { status: 404 });
-    }
-
-    // Update affected entities
-    await query("DELETE FROM memo_affected_entities WHERE memo_id = $1", [
-      params.id,
-    ]);
-
-    for (const entity of affected_entities) {
-      const [entityType, id] = entity.split("_");
-      const entityIdNum = parseInt(id);
-
-      if (entityType === "ministry") {
-        await query(
-          `
-          INSERT INTO memo_affected_entities (memo_id, ministry_id, entity_type)
-          VALUES ($1, $2, 'ministry')
-          `,
-          [params.id, entityIdNum]
-        );
-      } else if (entityType === "state_department") {
-        await query(
-          `
-          INSERT INTO memo_affected_entities (memo_id, state_department_id, entity_type)
-          VALUES ($1, $2, 'state_department')
-          `,
-          [params.id, entityIdNum]
-        );
-      } else if (entityType === "agency") {
-        await query(
-          `
-          INSERT INTO memo_affected_entities (memo_id, agency_id, entity_type)
-          VALUES ($1, $2, 'agency')
-          `,
-          [params.id, entityIdNum]
-        );
+    if (Array.isArray(body.affected_entities)) {
+      await supabase.from('memo_affected_entities').delete().eq('memo_id', id);
+      const rows = affectedRows(id, body.affected_entities);
+      if (rows.length) {
+        const { error: entitiesError } = await supabase.from('memo_affected_entities').insert(rows);
+        if (entitiesError) throw entitiesError;
       }
     }
 
-    return NextResponse.json({
-      message: "✅ Memo updated successfully",
-      memo: result.rows[0],
-    });
-  } catch (error: any) {
-    console.error("❌ Error updating memo:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to update memo" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: 'Memo updated', memo });
+  } catch (error) {
+    console.error('Error updating memo:', error);
+    return NextResponse.json({ error: errorMessage(error, 'Failed to update memo') }, { status: 500 });
   }
 }
 
 /**
- * =========================
- * DELETE /api/memos/[id]
- * =========================
+ * PATCH /api/memos/[id] — workflow status change.
+ *   { status: 'submitted' }                         → owner with memos.edit
+ *   { status: 'under_review' | 'approved' | 'rejected' } → memos.approve
  */
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: Ctx) {
+  const body = await request.json().catch(() => ({}));
+  const status: string | undefined = body.status;
+  if (!status || !ALL_STATUSES.includes(status)) {
+    return NextResponse.json({ error: 'A valid status is required' }, { status: 400 });
+  }
+
+  const g = await requireAccess('memos', APPROVER_STATUSES.includes(status) ? 'approve' : 'edit');
+  if (g.error) return g.error;
+
   try {
-    const session = await getServerSession(authOptions);
+    const id = toInt((await params).id);
+    if (!id) return NextResponse.json({ error: 'Invalid memo id' }, { status: 400 });
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const existing = await loadMemo(id);
+    if (!existing) return NextResponse.json({ error: 'Memo not found' }, { status: 404 });
+
+    const uid = await dbUserId(g.user);
+    if (!APPROVER_STATUSES.includes(status) && existing.created_by !== uid && !userCan(g.user, 'memos', 'approve')) {
+      return NextResponse.json({ error: 'You can only submit memos you created' }, { status: 403 });
     }
 
-    const existingMemo = await query(
-      "SELECT created_by, status FROM gov_memos WHERE id = $1",
-      [params.id]
-    );
+    const update: Record<string, unknown> = { status, updated_at: new Date().toISOString(), updated_by: uid };
+    if (status === 'submitted' && !existing.submitted_at) update.submitted_at = new Date().toISOString();
 
-    if (existingMemo.rows.length === 0) {
-      return NextResponse.json({ error: "Memo not found" }, { status: 404 });
+    const { data: memo, error } = await supabaseServer().from('gov_memos').update(update).eq('id', id).select().single();
+    if (error) throw error;
+    return NextResponse.json({ message: 'Status updated', memo });
+  } catch (error) {
+    console.error('Error changing memo status:', error);
+    return NextResponse.json({ error: errorMessage(error, 'Failed to update memo') }, { status: 500 });
+  }
+}
+
+/** DELETE /api/memos/[id] — own drafts; users with memos.manage can delete any memo. */
+export async function DELETE(_request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('memos', 'delete');
+  if (g.error) return g.error;
+
+  try {
+    const id = toInt((await params).id);
+    if (!id) return NextResponse.json({ error: 'Invalid memo id' }, { status: 400 });
+
+    const existing = await loadMemo(id);
+    if (!existing) return NextResponse.json({ error: 'Memo not found' }, { status: 404 });
+
+    const canManage = userCan(g.user, 'memos', 'manage');
+    const uid = await dbUserId(g.user);
+    if (!canManage && (existing.status !== 'draft' || existing.created_by !== uid)) {
+      return NextResponse.json({ error: 'You can only delete draft memos that you created' }, { status: 403 });
     }
 
-    const memo = existingMemo.rows[0];
-
-    // Only delete draft memos created by user
-    if (memo.status !== "draft" || memo.created_by !== session.user.id) {
-      return NextResponse.json(
-        { error: "Can only delete draft memos that you created" },
-        { status: 403 }
-      );
-    }
-
-    const result = await query(
-      "DELETE FROM gov_memos WHERE id = $1 RETURNING *",
-      [params.id]
-    );
-
-    return NextResponse.json({
-      message: "🗑️ Memo deleted successfully",
-      memo: result.rows[0],
-    });
-  } catch (error: any) {
-    console.error("❌ Error deleting memo:", error);
-    return NextResponse.json(
-      { error: error.message || "Failed to delete memo" },
-      { status: 500 }
-    );
+    const { error } = await supabaseServer().from('gov_memos').delete().eq('id', id);
+    if (error) throw error;
+    return NextResponse.json({ message: 'Memo deleted', id });
+  } catch (error) {
+    console.error('Error deleting memo:', error);
+    return NextResponse.json({ error: errorMessage(error, 'Failed to delete memo') }, { status: 500 });
   }
 }

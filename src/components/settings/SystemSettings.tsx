@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useSystemSettings } from "@/context/SystemSettingsContext";
 import SuperErrorModal from "@/components/ui/modal/SystemErrorModal";
+import { ConfirmDialog } from "@/components/ui/kit";
 import Image from "next/image";
 import {
   Settings,
@@ -129,7 +130,8 @@ const defaultSettings: SystemSettings = {
   description: 'Government Meeting Management Platform for boardms'
 };
 
-export default function SystemSettings() {
+export default function SystemSettings({ canEdit = true }: { canEdit?: boolean }) {
+  const [confirmReset, setConfirmReset] = useState(false);
   const { 
     getPrimaryColor, 
     getSecondaryColor,
@@ -283,7 +285,6 @@ export default function SystemSettings() {
     const fetchSettings = async () => {
       try {
         setIsLoading(true);
-        console.log('🔄 Fetching settings...');
         
         const response = await fetch('/api/system-settings');
         
@@ -292,24 +293,19 @@ export default function SystemSettings() {
         }
         
         const data = await response.json();
-        console.log('📥 Received data:', data);
         
         if (!data || Object.keys(data).length === 0) {
-          console.warn('⚠️ No settings data found, using defaults');
           setSettings(defaultSettings);
         } else {
           // Ensure all required fields are present
           const mergedSettings = { ...defaultSettings, ...data };
-          console.log('🔄 Merged settings:', mergedSettings);
           setSettings(mergedSettings);
         }
 
         // Set timezones
         if (data.timezones && Array.isArray(data.timezones)) {
-          console.log(`🌍 Loaded ${data.timezones.length} timezones`);
           setTimezones(data.timezones);
         } else {
-          console.warn('⚠️ No timezones found in response, using defaults');
           // Default timezones with Nairobi as first option
           setTimezones([
             { name: "Africa/Nairobi", abbrev: "EAT", utc_offset: "+03:00" },
@@ -322,7 +318,6 @@ export default function SystemSettings() {
         }
         
       } catch (error) {
-        console.error('❌ Error fetching settings:', error);
         // Use default settings on error
         setSettings(defaultSettings);
         showError(
@@ -389,7 +384,6 @@ export default function SystemSettings() {
       );
       
     } catch (error) {
-      console.error('❌ Error saving settings:', error);
       showError(
         'Save Failed',
         error instanceof Error ? error.message : 'Failed to save settings. Please try again.'
@@ -398,12 +392,6 @@ export default function SystemSettings() {
       setIsSaving(false);
     }
   };
-
-  // Add this debug logging
-  useEffect(() => {
-    console.log('🔍 Current settings state:', settings);
-    console.log('🔍 Current timezones state:', timezones);
-  }, [settings, timezones]);
 
   if (isLoading) {
     return (
@@ -466,10 +454,6 @@ export default function SystemSettings() {
                       value={currentSettings.name || ''}
                       onChange={(e) => handleInputChange("name", e.target.value)}
                       className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
-                      style={{ 
-                        focusBorderColor: primaryColor,
-                        focusRingColor: `${primaryColor}20`
-                      }}
                     />
                   </div>
                   <div>
@@ -493,10 +477,6 @@ export default function SystemSettings() {
                       value={currentSettings.timezone || 'Africa/Nairobi'}
                       onChange={(e) => handleInputChange("timezone", e.target.value)}
                       className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-                      style={{ 
-                        focusBorderColor: primaryColor,
-                        focusRingColor: `${primaryColor}20`
-                      }}
                     >
                       {timezones
                         .filter(tz => tz && tz.name && tz.abbrev && tz.utc_offset)
@@ -520,10 +500,6 @@ export default function SystemSettings() {
                       value={currentSettings.date_format || 'DD/MM/YYYY'}
                       onChange={(e) => handleInputChange("date_format", e.target.value)}
                       className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-                      style={{ 
-                        focusBorderColor: primaryColor,
-                        focusRingColor: `${primaryColor}20`
-                      }}
                     >
                       <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                       <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -539,10 +515,6 @@ export default function SystemSettings() {
                       value={currentSettings.language || 'en'}
                       onChange={(e) => handleInputChange("language", e.target.value)}
                       className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-                      style={{ 
-                        focusBorderColor: primaryColor,
-                        focusRingColor: `${primaryColor}20`
-                      }}
                     >
                       <option value="en">English</option>
                       <option value="sw">Swahili</option>
@@ -559,10 +531,6 @@ export default function SystemSettings() {
                       rows={3}
                       className="w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
                       placeholder="Brief description of the system"
-                      style={{ 
-                        focusBorderColor: primaryColor,
-                        focusRingColor: `${primaryColor}20`
-                      }}
                     />
                   </div>
                 </div>
@@ -814,8 +782,7 @@ export default function SystemSettings() {
                         currentSettings[item.id as keyof SystemSettings] ? 'bg-brand-500' : 'bg-gray-200 dark:bg-gray-700'
                       }`}
                       style={{ 
-                        backgroundColor: currentSettings[item.id as keyof SystemSettings] ? primaryColor : undefined,
-                        focusRingColor: primaryColor
+                        backgroundColor: currentSettings[item.id as keyof SystemSettings] ? primaryColor : undefined
                       }}
                     >
                       <span
@@ -850,10 +817,6 @@ export default function SystemSettings() {
                     value={currentSettings.session_timeout || 30}
                     onChange={(e) => handleInputChange("session_timeout", parseInt(e.target.value) || 30)}
                     className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
-                    style={{ 
-                      focusBorderColor: primaryColor,
-                      focusRingColor: `${primaryColor}20`
-                    }}
                   />
                   <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                     <Info size={12} />
@@ -870,10 +833,6 @@ export default function SystemSettings() {
                     value={currentSettings.password_policy || 'strong'}
                     onChange={(e) => handleInputChange("password_policy", e.target.value)}
                     className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-                    style={{ 
-                      focusBorderColor: primaryColor,
-                      focusRingColor: `${primaryColor}20`
-                    }}
                   >
                     <option value="basic">Basic (6 characters minimum)</option>
                     <option value="medium">Medium (8 characters with mix)</option>
@@ -903,8 +862,7 @@ export default function SystemSettings() {
                       currentSettings.two_factor_auth ? 'bg-brand-500' : 'bg-gray-200 dark:bg-gray-700'
                     }`}
                     style={{ 
-                      backgroundColor: currentSettings.two_factor_auth ? primaryColor : undefined,
-                      focusRingColor: primaryColor
+                      backgroundColor: currentSettings.two_factor_auth ? primaryColor : undefined
                     }}
                   >
                     <span
@@ -926,10 +884,6 @@ export default function SystemSettings() {
                     onChange={(e) => handleInputChange("ip_whitelist", e.target.value.split(',').map(ip => ip.trim()).filter(ip => ip))}
                     className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
                     placeholder="192.168.1.0/24, 10.0.0.0/8"
-                    style={{ 
-                      focusBorderColor: primaryColor,
-                      focusRingColor: `${primaryColor}20`
-                    }}
                   />
                   <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                     <Info size={12} />
@@ -949,10 +903,6 @@ export default function SystemSettings() {
                     value={currentSettings.audit_log_retention || 365}
                     onChange={(e) => handleInputChange("audit_log_retention", parseInt(e.target.value) || 365)}
                     className="h-11 w-full rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800"
-                    style={{ 
-                      focusBorderColor: primaryColor,
-                      focusRingColor: `${primaryColor}20`
-                    }}
                   />
                   <div className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                     <Info size={12} />
@@ -964,35 +914,27 @@ export default function SystemSettings() {
           )}
 
           {/* Save Button */}
+          {canEdit && (
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-800">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                <Info size={14} />
-                Changes will affect the entire system including login, registration, and dashboard pages.
+                <Info size={14} className="shrink-0" />
+                Changes affect the whole system, including the sign-in page.
               </div>
-              <div className="flex space-x-3">
-                <button 
-                  onClick={() => {
-                    if (confirm('Are you sure you want to reset all settings to defaults?')) {
-                      setSettings(defaultSettings);
-                    }
-                  }}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
                   className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800 flex items-center gap-2"
                 >
                   <RotateCcw size={16} />
                   Reset to Defaults
                 </button>
-                <button 
+                <button
+                  type="button"
                   onClick={handleSaveSettings}
                   disabled={isSaving}
-                  className="rounded-lg px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all hover:scale-105"
-                  style={{ backgroundColor: primaryColor }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = secondaryColor;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = primaryColor;
-                  }}
+                  className="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSaving ? (
                     <>
@@ -1009,8 +951,21 @@ export default function SystemSettings() {
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="Reset all settings?"
+        message="The form is filled with the default values. Nothing is saved until you choose Save Changes."
+        confirmLabel="Reset"
+        onConfirm={() => {
+          setSettings(defaultSettings);
+          setConfirmReset(false);
+        }}
+        onCancel={() => setConfirmReset(false)}
+      />
 
       <SuperErrorModal
         isOpen={error.isOpen}

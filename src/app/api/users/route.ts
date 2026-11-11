@@ -1,139 +1,103 @@
-// src/app/api/users/route.ts
+// /api/users
+//   GET  — any signed-in user (participant / presenter pickers use it). Full columns need users.view.
+//          ?role=<name|all>  ?roles=a,b,c  ?status=active
+//   POST — users.create: creates the Supabase Auth account and the users profile.
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase';
+import { requireAccess, requireUser, userCan } from '@/lib/auth/permissions';
+import { supabaseServer } from '@/lib/supabase/server';
+import { logAudit } from '@/lib/audit';
+import {
+  FULL_COLUMNS,
+  PUBLIC_COLUMNS,
+  USER_STATUSES,
+  bad,
+  guardRoleAssignment,
+  resolveRole,
+  validPassword,
+} from './_shared';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const role = searchParams.get('role');
-    const roles = searchParams.get('roles');
-    
-    const supabase = supabaseServer();
-    
-    console.log('🔍 Fetching users with parameters:', { roles, role });
+  const g = await requireUser();
+  if (g.error) return g.error;
 
-    let query = supabase
-      .from('users')
-      .select(`
-        id,
-        auth_id,
-        name,
-        email,
-        role,
-        image,
-        created_at
-      `)
-      .order('name', { ascending: true });
+  const sp = new URL(request.url).searchParams;
+  const full = userCan(g.user, 'users', 'view');
+  let q = supabaseServer()
+    .from('users')
+    .select(full ? FULL_COLUMNS : PUBLIC_COLUMNS)
+    .order('name', { ascending: true });
 
-    // Apply role filtering
-    if (role && role !== 'all') {
-      console.log(`🎯 Filtering by single role: ${role}`);
-      query = query.eq('role', role);
-    } else if (roles) {
-      const roleList = roles.split(',');
-      console.log(`🎯 Filtering by multiple roles:`, roleList);
-      query = query.in('role', roleList);
-    }
+  const role = sp.get('role');
+  const roles = sp.get('roles');
+  const status = sp.get('status');
+  if (role && role !== 'all') q = q.eq('role', role);
+  else if (roles) q = q.in('role', roles.split(',').map((r) => r.trim()).filter(Boolean));
+  if (status && full) q = q.eq('status', status);
 
-    const { data: users, error } = await query;
-
-    if (error) {
-      console.error('❌ Error fetching users:', error);
-      throw error;
-    }
-
-    console.log(`✅ Found ${users?.length || 0} users`);
-
-    if (!users || users.length === 0) {
-      console.log('👥 No users found with the specified filters');
-      return NextResponse.json([]);
-    }
-
-    return NextResponse.json(users);
-    
-  } catch (error) {
-    console.error('❌ Error in users API:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch users' },
-      { status: 500 }
-    );
+  const { data, error } = await q;
+  if (error) {
+    console.error('GET /api/users:', error.message);
+    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 });
   }
+  return NextResponse.json(data ?? []);
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { name, image, email, password, role, status, phone, ministry_id } = body;
+  const g = await requireAccess('users', 'create');
+  if (g.error) return g.error;
 
-    console.log('👤 Creating user:', { name, email, role });
+  const body = await request.json().catch(() => ({}));
+  const name = String(body.name ?? '').trim();
+  const email = String(body.email ?? '').trim().toLowerCase();
+  if (!name || !email) return bad('Name and email are required');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad('Enter a valid email address');
+  if (!validPassword(body.password)) return bad('Password must be at least 8 characters');
 
-    // 1. First create user in Supabase Auth
-    const supabase = supabaseServer();
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: email.toLowerCase(),
-      password: password,
-      email_confirm: true,
-      user_metadata: { name, role }
-    });
+  const role = await resolveRole(body.role);
+  if (!role) return bad('Choose a valid role');
+  const denied = guardRoleAssignment(g.user, role.role_key);
+  if (denied) return denied;
 
-    if (authError) {
-      console.error('❌ Auth creation failed:', authError);
-      return NextResponse.json(
-        { error: `Auth creation failed: ${authError.message}` },
-        { status: 400 }
-      );
-    }
+  const status = USER_STATUSES.includes(body.status) ? body.status : 'active';
+  const db = supabaseServer();
 
-    // 2. Then create profile in your users table using Supabase client
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .insert({
-        auth_id: authData.user.id,
-        name: name,
-        image: image || null,
-        email: email.toLowerCase(),
-        role: role,
-        status: status || 'active',
-        phone: phone || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select('id, name, email, role, status, phone, created_at')
-      .single();
+  const { data: exists } = await db.from('users').select('id').eq('email', email).maybeSingle();
+  if (exists) return bad('A user with this email already exists', 409);
 
-    if (userError) {
-      console.error('❌ User profile creation failed:', userError);
-      
-      // Clean up: delete the auth user if profile creation fails
-      await supabase.auth.admin.deleteUser(authData.user.id);
-      
-      return NextResponse.json(
-        { error: `User profile creation failed: ${userError.message}` },
-        { status: 400 }
-      );
-    }
+  const { data: auth, error: authError } = await db.auth.admin.createUser({
+    email,
+    password: body.password,
+    email_confirm: true,
+    user_metadata: { name },
+  });
+  if (authError || !auth.user) return bad(authError?.message || 'Could not create the sign-in account');
 
-    // 3. Handle ministry assignment if needed
-    if (ministry_id && userData) {
-      const { error: ministryError } = await supabase
-        .from('ministries')
-        .update({ cabinet_secretary: userData.id })
-        .eq('id', ministry_id);
+  const now = new Date().toISOString();
+  const { data: user, error } = await db
+    .from('users')
+    .insert({
+      auth_id: auth.user.id,
+      name,
+      email,
+      role: role.name,
+      status,
+      phone: body.phone ? String(body.phone) : null,
+      image: body.image ? String(body.image) : null,
+      created_at: now,
+      updated_at: now,
+    })
+    .select(FULL_COLUMNS)
+    .single();
 
-      if (ministryError) {
-        console.error('❌ Ministry assignment failed:', ministryError);
-        // Continue anyway - this is not critical
-      }
-    }
-
-    console.log('✅ User created successfully:', userData.id);
-    return NextResponse.json(userData, { status: 201 });
-
-  } catch (error) {
-    console.error('❌ Error creating user:', error);
-    return NextResponse.json(
-      { error: 'Failed to create user' },
-      { status: 500 }
-    );
+  if (error) {
+    await db.auth.admin.deleteUser(auth.user.id);
+    console.error('POST /api/users:', error.message);
+    return bad(`Could not create the user profile: ${error.message}`);
   }
+
+  if (status === 'suspended') await db.auth.admin.updateUserById(auth.user.id, { ban_duration: '876000h' });
+  await logAudit(g.user, 'USER_CREATE', 'user', user.id, { email, role: role.name });
+  return NextResponse.json(user, { status: 201 });
 }

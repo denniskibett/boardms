@@ -1,13 +1,16 @@
 // src/app/api/groups/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase';
+import { requireAccess } from '@/lib/auth/permissions';
 
 // GET - Fetch all groups with their members
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
+  const g = await requireAccess('meetings', 'view');
+  if (g.error) return g.error;
+
   try {
     const supabase = supabaseServer();
     
-    console.log('🔄 Fetching groups with members (UUIDs only)...');
 
     // First, fetch all groups
     const { data: groups, error: groupsError } = await supabase
@@ -16,16 +19,14 @@ export async function GET(request: NextRequest) {
       .order('name', { ascending: true });
 
     if (groupsError) {
-      console.error('❌ Error fetching groups:', groupsError);
+      console.error('Error fetching groups:', groupsError);
       throw groupsError;
     }
 
     if (!groups || groups.length === 0) {
-      console.log('✅ No groups found');
       return NextResponse.json([]);
     }
 
-    console.log(`✅ Found ${groups.length} groups`);
 
     // Fetch all group_users in a single query
     const { data: allGroupUsers, error: groupUsersError } = await supabase
@@ -34,11 +35,10 @@ export async function GET(request: NextRequest) {
       .in('group_id', groups.map(g => g.id));
 
     if (groupUsersError) {
-      console.error('❌ Error fetching group users:', groupUsersError);
+      console.error('Error fetching group users:', groupUsersError);
       throw groupUsersError;
     }
 
-    console.log(`✅ Found ${allGroupUsers?.length || 0} group user relationships`);
 
     // Get all unique user UUIDs from group_users
     const userUuids = allGroupUsers ? [...new Set(allGroupUsers.map(gu => gu.user_id))] : [];
@@ -52,10 +52,9 @@ export async function GET(request: NextRequest) {
         .in('auth_id', userUuids);
 
       if (usersError) {
-        console.error('❌ Error fetching users by UUID:', usersError);
+        console.error('Error fetching users by UUID:', usersError);
       } else {
         allUsers = usersData || [];
-        console.log(`✅ Found ${allUsers.length} users for groups`);
       }
     }
 
@@ -84,12 +83,11 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    console.log(`✅ Built ${groupsWithMembers.length} groups with members`);
     
     return NextResponse.json(groupsWithMembers);
     
   } catch (error) {
-    console.error('❌ Error fetching groups:', error);
+    console.error('Error fetching groups:', error);
     return NextResponse.json(
       { error: 'Failed to fetch groups' },
       { status: 500 }
@@ -99,11 +97,21 @@ export async function GET(request: NextRequest) {
 
 // POST - Create a new group
 export async function POST(request: NextRequest) {
+  const g = await requireAccess('meetings', 'create');
+  if (g.error) return g.error;
+
   try {
-    const { name, user_ids } = await request.json();
+    const body = await request.json();
+    const name = body.name;
+    // Accept `user_ids: string[]` or legacy `users: [{ user_id }]` (auth uuids).
+    const user_ids: string[] = Array.isArray(body.user_ids)
+      ? body.user_ids
+      : Array.isArray(body.users)
+        ? body.users.map((u: any) => String(u?.user_id ?? u?.id ?? u))
+        : [];
     const supabase = supabaseServer();
     
-    if (!name) {
+    if (!name || !String(name).trim()) {
       return NextResponse.json(
         { error: 'Group name is required' },
         { status: 400 }
@@ -114,13 +122,13 @@ export async function POST(request: NextRequest) {
     const { data: newGroup, error: groupError } = await supabase
       .from('groups')
       .insert({
-        name: name.trim()
+        name: String(name).trim()
       })
       .select()
       .single();
 
     if (groupError) {
-      console.error('❌ Error creating group:', groupError);
+      console.error('Error creating group:', groupError);
       throw groupError;
     }
 
@@ -136,12 +144,11 @@ export async function POST(request: NextRequest) {
         .insert(groupUsers);
 
       if (usersError) {
-        console.error('❌ Error adding users to group:', usersError);
+        console.error('Error adding users to group:', usersError);
         // Continue anyway - the group was created successfully
       }
     }
 
-    console.log(`✅ Created new group: ${newGroup.name}`);
     
     return NextResponse.json({
       id: newGroup.id.toString(),
@@ -150,7 +157,7 @@ export async function POST(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('❌ Error creating group:', error);
+    console.error('Error creating group:', error);
     return NextResponse.json(
       { error: 'Failed to create group' },
       { status: 500 }

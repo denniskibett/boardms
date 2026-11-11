@@ -1,33 +1,25 @@
-// src/app/api/roles/permissions/route.ts
+// GET /api/roles/permissions?roleKey=… — a role's permissions.
+// Users may read their own role; reading any other role needs roles.view.
 import { NextRequest, NextResponse } from 'next/server';
+import { getRolePermissions, requireUser, userCan } from '@/lib/auth/permissions';
+import { normalizeRoleKey } from '@/lib/rbac';
 import { supabaseServer } from '@/lib/supabase/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const roleKey = searchParams.get('roleKey');
-    
-    if (!roleKey) {
-      return NextResponse.json({ error: 'Role key is required' }, { status: 400 });
-    }
-    
-    const supabase = supabaseServer();
-    const { data, error } = await supabase
-      .from('system_roles')
-      .select('permissions, name, description, hierarchy_level')
-      .eq('role_key', roleKey)
-      .single();
-    
-    if (error) {
-      console.error('Error fetching role permissions:', error);
-      return NextResponse.json({ error: 'Role not found' }, { status: 404 });
-    }
-    
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error in GET /api/roles/permissions:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  const g = await requireUser();
+  if (g.error) return g.error;
+
+  const roleKey = normalizeRoleKey(new URL(request.url).searchParams.get('roleKey')) ?? g.user.role;
+  if (roleKey !== g.user.role && !userCan(g.user, 'roles', 'view')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
+  const { data, error } = await supabaseServer()
+    .from('system_roles')
+    .select('name, description, hierarchy_level')
+    .eq('role_key', roleKey)
+    .maybeSingle();
+  if (error || !data) return NextResponse.json({ error: 'Role not found' }, { status: 404 });
+
+  return NextResponse.json({ ...data, role_key: roleKey, permissions: await getRolePermissions(roleKey) });
 }

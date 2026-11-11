@@ -1,171 +1,170 @@
-"use client";
-import { useParams } from 'next/navigation';
-import { useMemoDetail } from '@/hooks/useMemo';
+'use client';
+
+import React, { useState } from 'react';
 import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import {
+  ActionsMenu,
+  Btn,
+  Card,
+  ConfirmDialog,
+  DetailList,
+  PageHeader,
+  StatusBadge,
+  toneForStatus,
+  type ActionItem,
+} from '@/components/ui/kit';
+import { useMemoDetail } from '@/hooks/useMemo';
+import { usePermissions } from '@/hooks/usePermissions';
+import MemoFormSlideOver from '@/components/memos/MemoFormSlideOver';
+import { MEMO_PRIORITIES, MEMO_STATUSES, MEMO_TYPES, api, formatDate, labelFor, priorityTone } from '@/components/memos/memoOptions';
 
 export default function MemoDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const memoId = params.id as string;
-  const { memo, loading, error } = useMemoDetail(memoId);
+  const { memo, loading, error, refetch } = useMemoDetail(memoId);
+  const { can } = usePermissions();
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const back = (
+    <Link href="/memos" className="inline-flex items-center gap-1.5 text-theme-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+      <ArrowLeft className="h-4 w-4" />
+      Back to memos
+    </Link>
+  );
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] p-6">
+      <Card>
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
-          <div className="h-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+          <div className="h-7 w-2/3 rounded bg-gray-100 dark:bg-gray-800" />
+          <div className="h-4 w-1/3 rounded bg-gray-100 dark:bg-gray-800" />
+          <div className="h-24 rounded bg-gray-100 dark:bg-gray-800" />
         </div>
-      </div>
+      </Card>
     );
   }
 
-  if (error) {
+  if (error || !memo) {
     return (
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] p-6">
-        <div className="text-center py-8">
-          <div className="mx-auto h-12 w-12 text-red-500">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-            </svg>
-          </div>
-          <h3 className="mt-4 text-lg font-medium text-gray-900 dark:text-white">Error Loading Memo</h3>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{error}</p>
-          <Link
-            href="/memos"
-            className="mt-4 inline-flex items-center rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
-          >
-            Back to Memos
-          </Link>
+      <Card>
+        <div className="py-10 text-center">
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">{error ? 'Could not load memo' : 'Memo not found'}</h3>
+          <p className="mt-1 text-theme-sm text-gray-500 dark:text-gray-400">{error || 'The memo you are looking for does not exist.'}</p>
+          <div className="mt-4 flex justify-center">{back}</div>
         </div>
-      </div>
+      </Card>
     );
   }
 
-  if (!memo) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03] p-6">
-        <div className="text-center py-8">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">Memo Not Found</h3>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            The memo you're looking for doesn't exist.
-          </p>
-          <Link
-            href="/memos"
-            className="mt-4 inline-flex items-center rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
-          >
-            Back to Memos
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const setStatus = async (status: string) => {
+    setActionError(null);
+    try {
+      await api(`/api/memos/${memo.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await refetch();
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/memos/${memo.id}`, { method: 'DELETE' });
+      router.push('/memos');
+    } catch (e) {
+      setActionError((e as Error).message);
+      setConfirmDelete(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canApprove = can('memos', 'approve');
+  const reviewable = ['submitted', 'under_review'].includes(memo.status);
+  const items: ActionItem[] = [
+    { label: 'Submit for review', onClick: () => setStatus('submitted'), hidden: !can('memos', 'edit') || memo.status !== 'draft' },
+    { label: 'Mark under review', onClick: () => setStatus('under_review'), hidden: !canApprove || memo.status !== 'submitted' },
+    { label: 'Approve', onClick: () => setStatus('approved'), hidden: !canApprove || !reviewable },
+    { label: 'Reject', onClick: () => setStatus('rejected'), hidden: !canApprove || !reviewable },
+    {
+      label: 'Delete',
+      danger: true,
+      separator: true,
+      onClick: () => setConfirmDelete(true),
+      hidden: !can('memos', 'delete') || (memo.status !== 'draft' && !can('memos', 'manage')),
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {memo.name}
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">
-            Originating from <strong>{memo.ministry_name}</strong> on {new Date(memo.created_at).toLocaleDateString()}
-          </p>
-        </div>
-        <Link
-          href="/memos"
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          Back to List
-        </Link>
-      </div>
+      {back}
+      <PageHeader
+        title={memo.name}
+        description={
+          <>
+            {memo.ministry_name ? <>From {memo.ministry_name} · </> : null}
+            Created {formatDate(memo.created_at)}
+            {memo.creator_name ? <> by {memo.creator_name}</> : null}
+          </>
+        }
+        actions={
+          <>
+            {can('memos', 'edit') && (
+              <Btn variant="outline" size="sm" onClick={() => setEditing(true)}>
+                Edit
+              </Btn>
+            )}
+            <ActionsMenu items={items} />
+          </>
+        }
+      />
 
-      {/* Status and Metadata */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-medium text-gray-900 dark:text-white">Status</h3>
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium mt-2 ${
-            memo.status === 'draft' ? 'bg-gray-100 text-gray-800' :
-            memo.status === 'submitted' ? 'bg-blue-100 text-blue-800' :
-            memo.status === 'approved' ? 'bg-green-100 text-green-800' :
-            'bg-red-100 text-red-800'
-          }`}>
-            {memo.status.charAt(0).toUpperCase() + memo.status.slice(1)}
-          </span>
-        </div>
-
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-medium text-gray-900 dark:text-white">Priority</h3>
-          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium mt-2 ${
-            memo.priority === 'low' ? 'bg-gray-100 text-gray-800' :
-            memo.priority === 'medium' ? 'bg-blue-100 text-blue-800' :
-            memo.priority === 'high' ? 'bg-orange-100 text-orange-800' :
-            'bg-red-100 text-red-800'
-          }`}>
-            {memo.priority.charAt(0).toUpperCase() + memo.priority.slice(1)}
-          </span>
-        </div>
-
-        <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-          <h3 className="font-medium text-gray-900 dark:text-white">Type</h3>
-          <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium mt-2 bg-purple-100 text-purple-800">
-            {memo.memo_type.charAt(0).toUpperCase() + memo.memo_type.slice(1)}
-          </span>
-        </div>
-      </div>
-
-      {/* Ministry/Department Info */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Submitting Entity
-        </h2>
-        <div className="space-y-2">
-          <div>
-            <span className="font-medium">Ministry:</span> {memo.ministry_name} ({memo.ministry_acronym})
-          </div>
-          {memo.state_department_name && (
-            <div>
-              <span className="font-medium">State Department:</span> {memo.state_department_name}
-            </div>
-          )}
-          {memo.agency_name && (
-            <div>
-              <span className="font-medium">Agency:</span> {memo.agency_name}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Summary */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Executive Summary
-        </h2>
-        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-          {memo.summary}
-        </p>
-      </div>
-
-      {/* Body Content */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Detailed Content
-        </h2>
-        <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-          {memo.body}
-        </div>
-      </div>
-
-      {/* Debug Info - Remove in production */}
-      {process.env.NODE_ENV === 'development' && memo.debug && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="font-medium text-yellow-800">Debug Information</h3>
-          <pre className="text-xs mt-2 text-yellow-700">
-            {JSON.stringify(memo.debug, null, 2)}
-          </pre>
+      {actionError && (
+        <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">
+          {actionError}
         </div>
       )}
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="min-w-0 space-y-6 xl:col-span-2">
+          <Card title="Executive summary">
+            <p className="whitespace-pre-wrap break-words text-theme-sm text-gray-700 dark:text-gray-300">{memo.summary || '—'}</p>
+          </Card>
+          <Card title="Content">
+            <div className="whitespace-pre-wrap break-words text-theme-sm text-gray-700 dark:text-gray-300">{memo.body || '—'}</div>
+          </Card>
+        </div>
+        <Card title="Details" className="h-fit">
+          <DetailList
+            items={[
+              { label: 'Status', value: <StatusBadge tone={toneForStatus(memo.status)}>{labelFor(MEMO_STATUSES, memo.status)}</StatusBadge> },
+              { label: 'Priority', value: <StatusBadge tone={priorityTone(memo.priority)}>{labelFor(MEMO_PRIORITIES, memo.priority)}</StatusBadge> },
+              { label: 'Type', value: labelFor(MEMO_TYPES, memo.memo_type) },
+              { label: 'Ministry', value: memo.ministry_name ? `${memo.ministry_name}${memo.ministry_acronym ? ` (${memo.ministry_acronym})` : ''}` : '—' },
+              { label: 'State dept.', value: memo.state_department_name || '—' },
+              { label: 'Agency', value: memo.agency_name || '—' },
+              { label: 'Submitted', value: formatDate(memo.submitted_at) },
+              { label: 'Updated', value: formatDate(memo.updated_at) },
+            ]}
+          />
+        </Card>
+      </div>
+
+      <MemoFormSlideOver open={editing} memoId={memo.id} onClose={() => setEditing(false)} onSaved={refetch} />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete memo?"
+        message={<>“{memo.name}” will be permanently deleted. This cannot be undone.</>}
+        busy={busy}
+        onConfirm={remove}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   );
 }

@@ -1,156 +1,185 @@
-// app/components/decisions/DecisionsList.tsx
-"use client";
-import React, { useState } from "react";
+'use client';
 
-const decisions = [
-  {
-    id: "DEC-001",
-    title: "Approval of Infrastructure Development Plan",
-    memo: "MEM-001 - Infrastructure Development Proposal",
-    committee: "Infrastructure & Energy",
-    decisionDate: "2024-01-12",
-    status: "implemented",
-    implementationDeadline: "2024-06-30",
-    responsibleMinistry: "Ministry of Transport",
-  },
-  {
-    id: "DEC-002",
-    title: "Healthcare Funding Allocation Approved",
-    memo: "MEM-002 - Healthcare Funding Allocation",
-    committee: "Social Services",
-    decisionDate: "2024-01-10",
-    status: "in_progress",
-    implementationDeadline: "2024-03-31",
-    responsibleMinistry: "Ministry of Health",
-  },
-  {
-    id: "DEC-003",
-    title: "Education Policy Reform Framework Endorsed",
-    memo: "MEM-003 - Education Policy Reform",
-    committee: "Social Services",
-    decisionDate: "2024-01-15",
-    status: "pending",
-    implementationDeadline: "2024-12-31",
-    responsibleMinistry: "Ministry of Education",
-  },
-];
+import React, { useCallback, useEffect, useState } from 'react';
+import { Btn, DataTable, DetailList, PageHeader, SlideOver, StatusBadge, type ActionItem, type Column } from '@/components/ui/kit';
+import { usePermissions } from '@/hooks/usePermissions';
+import { api, formatDate } from '@/components/memos/memoOptions';
+import ActionLetterFormSlideOver from '@/components/action-letters/ActionLetterFormSlideOver';
 
-const statusColors = {
-  pending: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  implemented: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-  delayed: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+interface Decision {
+  id: number;
+  agenda_id: number | null;
+  agenda_name: string | null;
+  discussion_summary: string | null;
+  recommendations: string | null;
+  decision_type: string | null;
+  decision_text: string | null;
+  requires_president_signature: boolean | null;
+  signed_by_name: string | null;
+  signed_at: string | null;
+  meeting_id: number | null;
+  meeting_name: string | null;
+  meeting_date: string | null;
+  memo_id: number | null;
+  memo_name: string | null;
+  ministry_name: string | null;
+  created_at: string;
+}
+
+const typeTone = (t?: string | null) => {
+  const s = (t || '').toLowerCase();
+  if (/approv|adopt|endorse/.test(s)) return 'success' as const;
+  if (/reject|declin/.test(s)) return 'error' as const;
+  if (/defer|refer|review/.test(s)) return 'warning' as const;
+  return 'gray' as const;
 };
 
-export default function DecisionsList() {
-  const [filter, setFilter] = useState("all");
-
-  const filteredDecisions = decisions.filter(decision => 
-    filter === "all" || decision.status === filter
+const signature = (d: Decision) =>
+  d.signed_at ? (
+    <StatusBadge tone="success">Signed</StatusBadge>
+  ) : d.requires_president_signature ? (
+    <StatusBadge tone="warning">Awaiting signature</StatusBadge>
+  ) : (
+    <span className="text-gray-400">Not required</span>
   );
 
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xs border border-gray-200 dark:border-gray-700">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-            >
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="implemented">Implemented</option>
-              <option value="delayed">Delayed</option>
-            </select>
-          </div>
+export default function DecisionsList() {
+  const { can } = usePermissions();
+  const [rows, setRows] = useState<Decision[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Decision | null>(null);
+  const [letterFor, setLetterFor] = useState<Decision | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setRows(await api<Decision[]>('/api/decisions'));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const canIssue = can('actionLetters', 'create');
+  const title = (d: Decision) => d.agenda_name || d.memo_name || `Decision #${d.id}`;
+
+  const columns: Column<Decision>[] = [
+    {
+      key: 'title',
+      header: 'Decision',
+      sortable: true,
+      sortValue: title,
+      className: 'min-w-[220px] max-w-md',
+      cell: (d) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium text-gray-800 dark:text-white/90">{title(d)}</p>
+          {d.decision_text && <p className="line-clamp-1 text-theme-xs text-gray-500 dark:text-gray-400">{d.decision_text}</p>}
         </div>
-      </div>
+      ),
+    },
+    {
+      key: 'decision_type',
+      header: 'Outcome',
+      sortable: true,
+      cell: (d) => (d.decision_type ? <StatusBadge tone={typeTone(d.decision_type)}>{d.decision_type.replace(/_/g, ' ')}</StatusBadge> : '—'),
+    },
+    { key: 'meeting_name', header: 'Meeting', sortable: true, hideBelow: 'lg', cell: (d) => d.meeting_name || '—' },
+    { key: 'ministry_name', header: 'Ministry', sortable: true, hideBelow: 'xl', cell: (d) => d.ministry_name || '—' },
+    { key: 'signature', header: 'Signature', hideBelow: 'md', cell: signature },
+    {
+      key: 'date',
+      header: 'Date',
+      sortable: true,
+      hideBelow: 'sm',
+      sortValue: (d) => d.meeting_date || d.created_at,
+      cell: (d) => formatDate(d.meeting_date || d.created_at),
+    },
+  ];
 
-      <div className="overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Decision
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Source Memo
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Committee
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Decision Date
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Responsible Ministry
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {filteredDecisions.map((decision) => (
-              <tr key={decision.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                <td className="px-6 py-4">
-                  <div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {decision.title}
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {decision.id}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {decision.memo}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {decision.committee}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(decision.decisionDate).toLocaleDateString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[decision.status]}`}>
-                    {decision.status.replace('_', ' ').charAt(0).toUpperCase() + decision.status.replace('_', ' ').slice(1)}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {decision.responsibleMinistry}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button className="text-brand-500 hover:text-brand-600 dark:text-brand-400 mr-4">
-                    View
-                  </button>
-                  <button className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
-                    Track
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+  const actions = (d: Decision): ActionItem[] => [
+    { label: 'View', onClick: () => setViewing(d) },
+    { label: 'Open memo', href: d.memo_id ? `/memos/${d.memo_id}` : undefined, hidden: !d.memo_id || !can('memos', 'view') },
+    { label: 'Issue action letter', onClick: () => setLetterFor(d), hidden: !canIssue },
+  ];
 
-        {filteredDecisions.length === 0 && (
-          <div className="text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No decisions found</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {filter !== "all" ? "Try adjusting your filter" : "No cabinet decisions available"}
-            </p>
+  return (
+    <>
+      <PageHeader title="Cabinet decisions" description="Decisions recorded on agenda items during cabinet and committee meetings." />
+
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(d) => d.id}
+        loading={loading}
+        error={error}
+        searchKeys={(d) => [d.agenda_name, d.memo_name, d.decision_text, d.decision_type, d.meeting_name, d.ministry_name]}
+        searchPlaceholder="Search decisions…"
+        actions={actions}
+        onRowClick={setViewing}
+        initialSort={{ key: 'date', dir: 'desc' }}
+        emptyTitle="No decisions recorded yet"
+        emptyDescription="Decisions appear here once deliberations are recorded on agenda items."
+      />
+
+      <SlideOver
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        size="lg"
+        title={viewing ? title(viewing) : 'Decision'}
+        description={viewing?.meeting_name ? `${viewing.meeting_name} · ${formatDate(viewing.meeting_date)}` : undefined}
+        footer={
+          viewing && canIssue ? (
+            <Btn
+              onClick={() => {
+                setLetterFor(viewing);
+                setViewing(null);
+              }}
+            >
+              Issue action letter
+            </Btn>
+          ) : undefined
+        }
+      >
+        {viewing && (
+          <div className="space-y-6">
+            <DetailList
+              items={[
+                { label: 'Outcome', value: viewing.decision_type ? viewing.decision_type.replace(/_/g, ' ') : '—' },
+                { label: 'Memo', value: viewing.memo_name || '—' },
+                { label: 'Ministry', value: viewing.ministry_name || '—' },
+                { label: 'Signature', value: signature(viewing) },
+                { label: 'Signed by', value: viewing.signed_by_name ? `${viewing.signed_by_name} · ${formatDate(viewing.signed_at)}` : '—' },
+              ]}
+            />
+            {[
+              ['Decision', viewing.decision_text],
+              ['Recommendations', viewing.recommendations],
+              ['Discussion summary', viewing.discussion_summary],
+            ].map(([label, text]) =>
+              text ? (
+                <div key={label}>
+                  <h4 className="mb-2 text-sm font-semibold text-gray-800 dark:text-white/90">{label}</h4>
+                  <p className="whitespace-pre-wrap break-words text-theme-sm text-gray-700 dark:text-gray-300">{text}</p>
+                </div>
+              ) : null,
+            )}
           </div>
         )}
-      </div>
-    </div>
+      </SlideOver>
+
+      <ActionLetterFormSlideOver
+        open={!!letterFor}
+        decisionId={letterFor?.id}
+        decisionSubject={letterFor ? title(letterFor) : null}
+        onClose={() => setLetterFor(null)}
+        onSaved={() => undefined}
+      />
+    </>
   );
 }

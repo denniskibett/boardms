@@ -1,26 +1,23 @@
-// app/(admin)/users/roles/page.tsx
-import type { Metadata } from "next";
-import RolesPermissions from "@/components/users/RolesPermissions";
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { getSessionUser, userCan } from '@/lib/auth/permissions';
+import { PageHeader } from '@/components/ui/kit';
+import RolesPermissions from '@/components/users/RolesPermissions';
+import AccessDenied from '@/components/users/AccessDenied';
 
 export const metadata: Metadata = {
-  title: "Roles & Permissions | E-Cabinet System",
-  description: "Manage user roles and system permissions",
+  title: 'Roles & Permissions | boardms',
+  description: 'Who can do what in each module',
 };
 
-export default function RolesPage() {
+export default async function RolesPage() {
+  const user = await getSessionUser();
+  if (!user) redirect('/signin');
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Roles & Permissions
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Manage user roles and their system permissions
-          </p>
-        </div>
-      </div>
-      <RolesPermissions />
+    <div>
+      <PageHeader title="Roles & Permissions" description="Decide what each role can view, create, edit, delete, approve or manage." />
+      {userCan(user, 'roles', 'view') ? <RolesPermissions /> : <AccessDenied what="roles and permissions" />}
     </div>
   );
 }

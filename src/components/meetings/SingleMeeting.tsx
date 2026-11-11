@@ -23,11 +23,13 @@ import {
 } from 'lucide-react';
 import MeetingDetails from './MeetingDetails';
 import MeetingInvitees from './MeetingInvitees';
-import MeetingAgenda from '@/components/meetings/MeetingAgenda';
 import MeetingParticipants from '@/components/meetings/MeetingParticipants';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
 import FileIcon from '@/components/agenda/FileIcon';
 import OpenBook from '@/components/agenda/OpenBook';
+import MeetingFormModal from '@/components/meetings/MeetingFormModal';
+import { ActionsMenu, Btn, ConfirmDialog, SlideOver } from '@/components/ui/kit';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface Meeting {
   id: string;
@@ -142,6 +144,10 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { can } = usePermissions();
 
   // Document Viewer State
   const [isDocumentViewerOpen, setIsDocumentViewerOpen] = useState(false);
@@ -171,7 +177,6 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
 
   // Stable participants update handler
   const handleParticipantsUpdate = useCallback((updatedParticipants: any[]) => {
-    console.log('🔄 Updating participants in parent:', updatedParticipants.length);
     setParticipants(updatedParticipants);
     
     if (meeting) {
@@ -185,17 +190,20 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
   // Stable refresh function for participants
   const refreshParticipants = useCallback(async () => {
     try {
-      console.log('🔄 Manually refreshing participants...');
       const response = await fetch(`/api/meetings/${meetingId}/participants`);
       if (response.ok) {
         const participantsData = await response.json();
         setParticipants(participantsData);
-        console.log('✅ Participants refreshed:', participantsData.length);
       }
     } catch (error) {
-      console.error('❌ Error refreshing participants:', error);
+      console.error('Error refreshing participants:', error);
     }
   }, [meetingId]);
+
+  // Participants come from the participants API (individual rows with user + RSVP).
+  useEffect(() => {
+    refreshParticipants();
+  }, [refreshParticipants]);
 
   // Fetch meeting data
   useEffect(() => {
@@ -208,7 +216,6 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
         setIsLoading(true);
         setError(null);
 
-        console.log('🔄 Fetching meeting data for ID:', meetingId);
 
         const meetingResponse = await fetch(`/api/meetings/${meetingId}`, {
           signal: abortController.signal
@@ -222,13 +229,9 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
         }
         
         const meetingData = await meetingResponse.json();
-        console.log('✅ Meeting data loaded:', meetingData);
         
         setMeeting(meetingData);
         
-        if (meetingData.participants) {
-          setParticipants(meetingData.participants);
-        }
         
         if (meetingData.agenda) {
           const agendaWithDocuments = await Promise.all(
@@ -259,8 +262,8 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
         }
 
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('❌ Error fetching data:', err);
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+          console.error('Error fetching data:', err);
           setError(err instanceof Error ? err.message : 'Failed to load meeting');
         }
       } finally {
@@ -288,7 +291,6 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
 
       for (const document of selectedAgenda.documents) {
         try {
-          console.log('🔄 Converting document to HTML:', document.name);
           const htmlContent = await convertToHTML(document);
           
           contents.push({
@@ -301,7 +303,7 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
             currentPage: 1
           });
         } catch (error) {
-          console.error('❌ Failed to convert document:', document.name, error);
+          console.error('Failed to convert document:', document.name, error);
           contents.push({
             id: document.id,
             agendaId: selectedAgenda.id,
@@ -323,7 +325,6 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
 
       setDocumentContents(contents);
       setIsConverting(false);
-      console.log('✅ Document conversion completed:', contents.length, 'documents converted');
     };
 
     convertDocumentsToHTML();
@@ -399,7 +400,7 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
   const convertPDFToHTML = async (document: AgendaDocument): Promise<string> => {
     return new Promise((resolve, reject) => {
       import('pdfjs-dist').then(pdfjsLib => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
         const loadingTask = pdfjsLib.getDocument(document.file_url);
         loadingTask.promise.then((pdf: any) => {
@@ -414,7 +415,7 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
             pagePromises.push(
               pdf.getPage(i).then((page: any) => {
                 const viewport = page.getViewport({ scale: 1.5 });
-                const canvas = document.createElement('canvas');
+                const canvas = window.document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
@@ -473,16 +474,12 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
   // Refresh meeting data after agenda operations
   const refreshMeetingData = async () => {
     try {
-      console.log('🔄 Refreshing meeting data...');
       const meetingResponse = await fetch(`/api/meetings/${meetingId}?t=${Date.now()}`);
       
       if (meetingResponse.ok) {
         const meetingData = await meetingResponse.json();
         setMeeting(meetingData);
         
-        if (meetingData.participants) {
-          setParticipants(meetingData.participants);
-        }
         
         if (meetingData.agenda) {
           const agendaWithDocuments = await Promise.all(
@@ -512,10 +509,9 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
           setAgenda([]);
         }
         
-        console.log('✅ Meeting data refreshed');
       }
     } catch (error) {
-      console.error('❌ Error refreshing meeting data:', error);
+      console.error('Error refreshing meeting data:', error);
     }
   };
 
@@ -670,22 +666,22 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isDocumentViewerOpen, currentContentIndex, documentContents, selectedAgenda, agenda]);
 
-  const handleDownloadDocument = async (document: AgendaDocument) => {
+  const handleDownloadDocument = async (doc: AgendaDocument) => {
     try {
-      const response = await fetch(document.file_url);
+      const response = await fetch(doc.file_url);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.style.display = 'none';
       a.href = url;
-      a.download = document.name;
+      a.download = doc.name;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
       console.error('Error downloading document:', error);
-      alert('Failed to download document');
+      setActionError('Failed to download document');
     }
   };
 
@@ -697,42 +693,30 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleEdit = () => {
-    router.push(`/meetings/edit/${meetingId}`);
-  };
+  const handleEdit = () => setIsEditOpen(true);
 
   const handleDelete = async () => {
-    if (!meeting || !confirm('Are you sure you want to delete this meeting? This will also delete all associated agenda and attachments. This action cannot be undone.')) {
-      return;
-    }
-
+    if (!meeting) return;
     try {
       setIsDeleting(true);
-      console.log('🔄 Deleting meeting:', meetingId);
-      
-      const response = await fetch(`/api/meetings/${meetingId}`, {
-        method: 'DELETE',
-      });
-
+      setActionError(null);
+      const response = await fetch(`/api/meetings/${meetingId}`, { method: 'DELETE' });
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to delete meeting');
       }
-      
-      console.log('✅ Meeting deleted');
-      router.push('/calendar');
-      router.refresh();
-
+      setConfirmDeleteOpen(false);
+      router.push('/meetings');
     } catch (err) {
-      console.error('❌ Error deleting meeting:', err);
-      alert(err instanceof Error ? err.message : 'Failed to delete meeting. Please try again.');
+      console.error('Error deleting meeting:', err);
+      setActionError(err instanceof Error ? err.message : 'Failed to delete meeting. Please try again.');
+      setConfirmDeleteOpen(false);
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleAgendaUpdate = (updatedAgenda: Agenda) => {
-    console.log('🔄 Updating agenda in state:', updatedAgenda);
     
     setAgenda(prev => prev.map(agendaItem => 
       agendaItem.id === updatedAgenda.id ? updatedAgenda : agendaItem
@@ -751,39 +735,6 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
       } : null);
     }
   };
-
-  // Action Cards Configuration
-  const actionCards = [
-    {
-      id: 'participants',
-      title: 'Manage Participants',
-      description: 'Add, remove, and track RSVP status',
-      icon: Users,
-      color: 'blue',
-      onClick: () => setIsParticipantsSlideOverOpen(true)
-    },
-    {
-      id: 'agenda',
-      title: 'Add Agenda Item',
-      description: 'Create new agenda items and upload attachments',
-      icon: BookOpen,
-      color: 'green',
-      onClick: () => setIsAgendaSlideOverOpen(true)
-    },
-    {
-      id: 'documents',
-      title: 'View Attachments',
-      description: 'Browse all meeting attachments',
-      icon: File,
-      color: 'purple',
-      onClick: () => {
-        if (allDocuments.length > 0) {
-          openDocumentViewer();
-        }
-      },
-      disabled: allDocuments.length === 0
-    }
-  ];
 
   // Render Document Viewer
   const renderDocumentViewer = () => {
@@ -1121,11 +1072,11 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Meeting Not Found</h3>
           <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
           <button
-            onClick={() => router.push('/calendar')}
+            onClick={() => router.push('/meetings')}
             className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Calendar
+            Back to meetings
           </button>
         </div>
       </div>
@@ -1136,157 +1087,112 @@ const SingleMeeting: React.FC<SingleMeetingProps> = ({ meetingId, settings: prop
     return null;
   }
 
+  const canEditMeeting = can('meetings', 'edit');
+  const canDeleteMeeting = can('meetings', 'delete');
+
   return (
-    <div className="w-full p-4 md:p-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Details</h2>
-        <nav>
-          <ol className="flex items-center gap-1.5">
-            <li>
-              <button
-                onClick={() => router.push('/calendar')}
-                className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to Calendar
-              </button>
-            </li>
-            <li className="text-sm text-gray-800 dark:text-white/90">Details</li>
-          </ol>
-        </nav>
-      </div>
+    <div className="w-full space-y-6">
+      <button
+        type="button"
+        onClick={() => router.push('/meetings')}
+        className="inline-flex items-center gap-1.5 text-theme-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to meetings
+      </button>
 
-      {/* Meeting Details - Pass settings */}
-      <MeetingDetails meeting={meeting} onEdit={handleEdit} settings={settings} />
-
-      {/* Meeting Invitees - Pass settings */}
-      <MeetingInvitees meeting={meeting} settings={settings} />
-
-      {/* Action Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        {actionCards.map((card) => {
-          const Icon = card.icon;
-          const colorClasses = {
-            blue: 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800',
-            green: 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800',
-            purple: 'bg-purple-50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800',
-          };
-          const iconColors = {
-            blue: 'text-blue-600 dark:text-blue-400',
-            green: 'text-green-600 dark:text-green-400',
-            purple: 'text-purple-600 dark:text-purple-400',
-          };
-
-          return (
-            <button
-              key={card.id}
-              onClick={card.onClick}
-              disabled={card.disabled}
-              className={`
-                p-6 rounded-xl border-2 text-left transition-all duration-200 hover:shadow-md
-                ${colorClasses[card.color as keyof typeof colorClasses]}
-                ${card.disabled 
-                  ? 'opacity-50 cursor-not-allowed' 
-                  : 'hover:scale-105 cursor-pointer'
-                }
-              `}
-            >
-              <div className="flex items-start gap-4">
-                <div className={`p-3 rounded-lg ${colorClasses[card.color as keyof typeof colorClasses]}`}>
-                  <Icon className={`w-6 h-6 ${iconColors[card.color as keyof typeof iconColors]}`} />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                    {card.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    {card.description}
-                  </p>
-                  {card.disabled && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                      No attachments available
-                    </p>
-                  )}
-                </div>
-                <Plus className="w-5 h-5 text-gray-400 flex-shrink-0" />
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="h-screen"> 
-        {/* Ensure full height */}
-        <OpenBook meetingId={meetingId} />
-      </div>
-
-      {/* Participants Slide-over */}
-      {isParticipantsSlideOverOpen && (
-        <div className="fixed inset-0 z-99999 overflow-hidden">
-          <div className="absolute inset-0 overflow-hidden">
-            {/* Background overlay */}
-            <div 
-              className="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
-              onClick={() => setIsParticipantsSlideOverOpen(false)}
-            />
-            
-            {/* Slide-over panel */}
-            <div className="absolute inset-y-0 right-0 pl-10 max-w-full flex">
-              <div className="relative w-screen max-w-2xl">
-                <div className="h-full flex flex-col bg-white dark:bg-gray-900 shadow-xl">
-                  {/* Header */}
-                  <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <div>
-                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Meeting Participants
-                      </h2>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        {meeting?.name}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setIsParticipantsSlideOverOpen(false)}
-                      className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
-                    >
-                      <X className="w-6 h-6" />
-                    </button>
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 overflow-y-auto">
-                    <div className="p-6">
-                      <MeetingParticipants 
-                        meetingId={parseInt(meetingId)} 
-                        participants={participants}
-                        onParticipantsUpdate={handleParticipantsUpdate}
-                        onRefresh={refreshParticipants}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Footer with timezone info */}
-                  <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      All times in {settings.timezone} • {settings.time_format === '12' ? '12h' : '24h'} format
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      {actionError && (
+        <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-600 dark:border-error-500/30 dark:bg-error-500/15 dark:text-error-400">
+          {actionError}
         </div>
       )}
 
-      {/* Agenda Slide-over */}
-      {isAgendaSlideOverOpen && (
-        <AgendaSlideOver
-          isOpen={isAgendaSlideOverOpen}
-          onClose={() => setIsAgendaSlideOverOpen(false)}
-          meetingId={meetingId}
-          onAgendaAdded={refreshMeetingData}
+      <MeetingDetails
+        meeting={meeting}
+        settings={settings}
+        actions={
+          <ActionsMenu
+            items={[
+              { label: 'Edit meeting', onClick: handleEdit, hidden: !canEditMeeting },
+              { label: 'Participants', onClick: () => setIsParticipantsSlideOverOpen(true) },
+              { label: 'Add agenda item', onClick: () => setIsAgendaSlideOverOpen(true), hidden: !can('agenda', 'create') },
+              { label: 'Minutes', href: `/meetings/minutes/${meetingId}` },
+              {
+                label: 'Delete meeting',
+                danger: true,
+                separator: true,
+                hidden: !canDeleteMeeting,
+                onClick: () => setConfirmDeleteOpen(true),
+              },
+            ]}
+          />
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <MeetingInvitees participants={participants} onManage={() => setIsParticipantsSlideOverOpen(true)} />
+        </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+          <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">Quick actions</h3>
+          {can('agenda', 'create') && (
+            <Btn variant="outline" onClick={() => setIsAgendaSlideOverOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add agenda item
+            </Btn>
+          )}
+          <Btn variant="outline" onClick={() => setIsParticipantsSlideOverOpen(true)}>
+            <Users className="h-4 w-4" />
+            Participants
+          </Btn>
+          <Btn variant="outline" onClick={() => openDocumentViewer()} disabled={allDocuments.length === 0}>
+            <File className="h-4 w-4" />
+            {allDocuments.length ? `View attachments (${allDocuments.length})` : 'No attachments'}
+          </Btn>
+        </div>
+      </div>
+
+      <div className="h-[80vh] min-h-[560px]">
+        <OpenBook meetingId={meetingId} />
+      </div>
+
+      <SlideOver
+        open={isParticipantsSlideOverOpen}
+        onClose={() => setIsParticipantsSlideOverOpen(false)}
+        title="Participants"
+        description={meeting.name}
+        size="lg"
+      >
+        <MeetingParticipants
+          meetingId={parseInt(meetingId)}
+          participants={participants}
+          onParticipantsUpdate={handleParticipantsUpdate}
         />
-      )}
+      </SlideOver>
+
+      <AgendaSlideOver
+        agenda={null}
+        meetingId={meetingId}
+        isOpen={isAgendaSlideOverOpen}
+        onClose={() => setIsAgendaSlideOverOpen(false)}
+        onSave={() => refreshMeetingData()}
+      />
+
+      <MeetingFormModal
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        selectedEvent={meeting}
+        onSuccess={() => refreshMeetingData()}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete meeting?"
+        message={`"${meeting.name}" and its participants will be removed. This cannot be undone.`}
+        busy={isDeleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
 
       {/* Document Viewer */}
       {renderDocumentViewer()}

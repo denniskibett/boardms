@@ -6,7 +6,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/context/SidebarContext";
 import { useSystemSettings } from "@/context/SystemSettingsContext";
-import { useSession } from "next-auth/react";
+import { usePermissions } from "@/hooks/usePermissions";
+import type { Action, ModuleKey } from "@/lib/rbac";
 import {
   ChevronDown,
   LayoutDashboard,
@@ -28,217 +29,93 @@ import {
   Database,
   HardDrive,
   Heart,
+  Building2,
 } from "lucide-react";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
   path?: string;
-  subItems?: { name: string; path: string; pro?: boolean; new?: boolean }[];
-  roles?: string[];
+  subItems?: { name: string; path: string; perm?: [ModuleKey, Action]; pro?: boolean; new?: boolean }[];
+  /** Module (and action) needed to see this item. */
+  perm: [ModuleKey, Action?];
 };
 
-// Role normalization - maps database roles to frontend roles
-const normalizeRole = (role?: string | null): string | null => {
-  if (!role) return null;
-
-  const roleMap: Record<string, string> = {
-    "President": "president",
-    "Deputy President": "deputy_president",
-    "Prime Cabinet Secretary": "prime_cabinet_secretary",
-    "Cabinet Secretary": "cabinet_secretary",
-    "Principal Secretary": "principal_secretary",
-    "Cabinet Secretariat": "cabinet_secretariat",
-    "Director": "director",
-    "Assistant Director": "assistant_director",
-    "Attorney General": "attorney_general",
-    "Admin": "admin",
-    "Sysadmin": "sysadmin",
-    "CO Officer": "co_officer",
-    "Co Officer": "co_officer",
-  };
-
-  return roleMap[role] || role.toLowerCase().replace(/\s+/g, "_");
-};
-
-// ============= NAVIGATION ITEMS =============
+// ============= NAVIGATION ITEMS (visibility comes from role permissions) =============
 const navItems: NavItem[] = [
+  { icon: <LayoutDashboard size={20} />, name: "Dashboard", path: "/dashboard", perm: ["dashboard"] },
+  { icon: <Calendar size={20} />, name: "Meetings", path: "/meetings", perm: ["meetings"] },
   {
-    icon: <LayoutDashboard size={20} />,
-    name: "Dashboard",
-    path: "/dashboard",
-    roles: ["all"],
+    icon: <BookOpen size={20} />,
+    name: "Agenda & Books",
+    perm: ["agenda"],
+    subItems: [
+      { name: "All Agenda", path: "/agenda" },
+      { name: "Create Agenda", path: "/agenda/create", perm: ["agenda", "create"] },
+      { name: "Meeting Books", path: "/books", perm: ["books", "view"] },
+    ],
   },
   {
     icon: <FileText size={20} />,
-    name: "Government Memos",
+    name: "Cabinet Memos",
+    perm: ["memos"],
     subItems: [
       { name: "My Memos", path: "/memos" },
       { name: "All Memos", path: "/memos/all" },
     ],
-    roles: ["cabinet_secretariat", "cabinet_secretary", "principal_secretary", "director", "assistant_director", "co_officer", "attorney_general", "prime_cabinet_secretary", "admin", "sysadmin"],
   },
-  {
-    icon: <BookOpen size={20} />,
-    name: "Agenda & Books",
-    subItems: [
-      { name: "All Agenda", path: "/agenda" },
-      { name: "Create Agenda", path: "/agenda/create" },
-      { name: "Committee Agenda Books", path: "/committees/infrastructure/tier1-agenda" },
-      { name: "Cabinet Agenda Books", path: "/cabinet/tier2-agenda" },
-    ],
-    roles: ["cabinet_secretariat", "prime_cabinet_secretary", "co_officer", "admin", "sysadmin"],
-  },
-  {
-    icon: <Users2 size={20} />,
-    name: "Committees",
-    subItems: [
-      { name: "Committee List", path: "/committees" },
-      { name: "My Committees", path: "/committees/my" },
-      { name: "Assign Members", path: "/committees/assign" },
-    ],
-    roles: ["deputy_president", "cabinet_secretariat", "cabinet_secretary", "principal_secretary", "director", "assistant_director", "co_officer", "attorney_general", "prime_cabinet_secretary", "admin", "sysadmin"],
-  },
-  {
-    icon: <Calendar size={20} />,
-    name: "Meetings",
-    path: "/meetings",
-    roles: ["president", "deputy_president", "prime_cabinet_secretary", "cabinet_secretariat", "cabinet_secretary", "principal_secretary", "director", "assistant_director", "co_officer", "attorney_general", "admin", "sysadmin"],
-  },
-  {
-    icon: <Globe size={20} />,
-    name: "Resources",
-    path: "/resources",
-    roles: ["all"],
-  },
-  {
-    icon: <CheckSquare size={20} />,
-    name: "Decisions",
-    path: "/decisions",
-    roles: ["president", "deputy_president", "prime_cabinet_secretary", "cabinet_secretariat", "cabinet_secretary", "principal_secretary", "director", "attorney_general", "admin", "sysadmin"],
-  },
-  {
-    icon: <Mail size={20} />,
-    name: "Action Letters",
-    path: "/action-letters",
-    roles: ["president", "deputy_president", "prime_cabinet_secretary", "cabinet_secretariat", "cabinet_secretary", "principal_secretary", "director", "co_officer", "admin", "sysadmin"],
-  },
+  { icon: <CheckSquare size={20} />, name: "Decisions", path: "/decisions", perm: ["decisions"] },
+  { icon: <Mail size={20} />, name: "Action Letters", path: "/action-letters", perm: ["actionLetters"] },
+  { icon: <Users2 size={20} />, name: "Committees", path: "/committees", perm: ["committees"] },
+  { icon: <Globe size={20} />, name: "Resources", path: "/resources", perm: ["resources"] },
 ];
 
 const managementItems: NavItem[] = [
   {
     icon: <Users size={20} />,
     name: "User Management",
+    perm: ["users"],
     subItems: [
       { name: "All Users", path: "/users" },
-      { name: "Roles & Permissions", path: "/users/roles" },
-      { name: "MDAs", path: "/users/mdas" },
+      { name: "Roles & Permissions", path: "/users/roles", perm: ["roles", "view"] },
     ],
-    roles: ["admin", "sysadmin", "cabinet_secretariat"],
   },
-  {
-    icon: <BarChart3 size={20} />,
-    name: "Reports & Analytics",
-    path: "/reports",
-    roles: ["president", "deputy_president", "prime_cabinet_secretary", "cabinet_secretariat", "admin", "sysadmin", "cabinet_secretary", "principal_secretary"],
-  },
-  {
-    icon: <Shield size={20} />,
-    name: "Audit Trail",
-    path: "/audit",
-    roles: ["sysadmin", "admin", "attorney_general", "cabinet_secretariat"],
-  },
-  {
-    icon: <Settings size={20} />,
-    name: "System Settings",
-    path: "/settings",
-    roles: ["sysadmin", "admin"],
-  },
-];
-
-const systemItems: NavItem[] = [
-  {
-    icon: <Server size={20} />,
-    name: "System Health",
-    path: "/system/health",
-    roles: ["sysadmin"],
-  },
-  {
-    icon: <Database size={20} />,
-    name: "Backup Management",
-    path: "/system/backup",
-    roles: ["sysadmin"],
-  },
-  {
-    icon: <Activity size={20} />,
-    name: "System Logs",
-    path: "/system/logs",
-    roles: ["sysadmin"],
-  },
-  {
-    icon: <HardDrive size={20} />,
-    name: "Storage Management",
-    path: "/system/storage",
-    roles: ["sysadmin"],
-  },
-  {
-    icon: <Heart size={20} />,
-    name: "Performance Monitor",
-    path: "/system/performance",
-    roles: ["sysadmin"],
-  },
-];
-
-const legalItems: NavItem[] = [
-  {
-    icon: <Scale size={20} />,
-    name: "Legal",
-    subItems: [
-      { name: "Legal Reviews", path: "/legal/reviews" },
-      { name: "Certifications", path: "/legal/certifications" },
-      { name: "Legal Opinions", path: "/legal/opinions" },
-      { name: "Constitutional Compliance", path: "/legal/compliance" },
-      { name: "Treaties & Agreements", path: "/legal/treaties" },
-    ],
-    roles: ["attorney_general"],
-  },
+  { icon: <Building2 size={20} />, name: "MDAs", path: "/mdas", perm: ["mdas"] },
+  { icon: <BarChart3 size={20} />, name: "Reports & Analytics", path: "/reports", perm: ["reports"] },
+  { icon: <Shield size={20} />, name: "Audit Trail", path: "/audit", perm: ["audit"] },
+  { icon: <Settings size={20} />, name: "System Settings", path: "/settings", perm: ["settings"] },
 ];
 
 // ============= MAIN COMPONENT =============
 const AppSidebar: React.FC = () => {
-  const { data: session } = useSession();
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const { getSystemName, getLogo, getPrimaryColor, settings } = useSystemSettings();
   const pathname = usePathname();
-  
+  const { can, role: userRole } = usePermissions();
+
   const [mounted, setMounted] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
   const [openMenus, setOpenMenus] = useState<Set<string>>(new Set());
 
-  // Initialize component and get user role
   useEffect(() => {
     setMounted(true);
-    if (session?.user?.role) {
-      const normalized = normalizeRole(session.user.role);
-      console.log("User role normalized:", session.user.role, "→", normalized);
-      setUserRole(normalized);
-    }
-  }, [session]);
+  }, []);
 
-  // Check if user can see a menu item
-  const canSeeMenuItem = useCallback((item: NavItem): boolean => {
-    if (!userRole) return false;
-    if (item.roles?.includes("all")) return true;
-    if (!item.roles || item.roles.length === 0) return false;
-    return item.roles.includes(userRole);
-  }, [userRole]);
+  // Items (and sub-items) the current role can see.
+  const visible = useCallback(
+    (items: NavItem[]) =>
+      items
+        .filter((item) => can(item.perm[0], item.perm[1] ?? "view"))
+        .map((item) =>
+          item.subItems
+            ? { ...item, subItems: item.subItems.filter((s) => !s.perm || can(s.perm[0], s.perm[1])) }
+            : item,
+        ),
+    [can],
+  );
 
-  // Memoize filtered items to prevent unnecessary re-renders
-  const filteredNavItems = useMemo(() => navItems.filter(canSeeMenuItem), [canSeeMenuItem]);
-  const filteredManagementItems = useMemo(() => managementItems.filter(canSeeMenuItem), [canSeeMenuItem]);
-  const filteredSystemItems = useMemo(() => systemItems.filter(canSeeMenuItem), [canSeeMenuItem]);
-  const filteredLegalItems = useMemo(() => legalItems.filter(canSeeMenuItem), [canSeeMenuItem]);
-  const allManagementItems = useMemo(() => [...filteredManagementItems, ...filteredSystemItems], [filteredManagementItems, filteredSystemItems]);
+  const filteredNavItems = useMemo(() => visible(navItems), [visible]);
+  const allManagementItems = useMemo(() => visible(managementItems), [visible]);
+  const filteredLegalItems: NavItem[] = [];
 
   // Auto-open menus based on current path
   useEffect(() => {

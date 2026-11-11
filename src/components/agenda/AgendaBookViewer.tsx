@@ -2,6 +2,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import DocumentReader from "@/components/documents/DocumentReader";
 
 interface Agenda {
   id: string;
@@ -143,7 +144,7 @@ export default function AgendaBookViewer({ agendaId }: AgendaBookViewerProps) {
             type="file"
             onChange={handleFileUpload}
             className="mt-4"
-            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp"
           />
         </div>
       );
@@ -181,28 +182,26 @@ export default function AgendaBookViewer({ agendaId }: AgendaBookViewerProps) {
               type="file"
               onChange={handleFileUpload}
               className="text-sm"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp"
             />
           </div>
         </div>
 
         {/* File content area */}
         <div className="flex-1 relative bg-gray-100 overflow-auto">
-          {/* This is where you'd integrate with a document viewer */}
-          {/* For now, showing a placeholder */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full">
-              <h3 className="text-xl font-bold mb-4">{currentFile.file_name}</h3>
-              <p className="text-gray-600 mb-4">
+          <div className="p-4">
+            <div className="bg-white p-4 rounded-lg shadow-lg w-full">
+              <p className="text-sm text-gray-600 mb-3">
                 File type: {currentFile.file_type} • Size: {(currentFile.file_size / 1024 / 1024).toFixed(2)} MB
               </p>
-              
-              {/* Document preview placeholder */}
-              <div className="border-2 border-dashed border-gray-300 rounded-lg h-96 flex items-center justify-center">
-                <p className="text-gray-500">
-                  Document preview for {currentFile.file_type} files
-                </p>
-              </div>
+
+              <DocumentReader
+                key={currentFile.id}
+                name={currentFile.file_name}
+                type={currentFile.file_type}
+                url={currentFile.file_url}
+                height="70vh"
+              />
 
               {/* Annotations display */}
               {currentFile.annotations.length > 0 && (

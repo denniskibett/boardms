@@ -24,6 +24,9 @@
     ],
     "baseUrl": ".",
     "paths": {
+      "@/types/*": [
+        "./types/*"
+      ],
       "@/*": [
         "./src/*"
       ]
@@ -37,7 +40,5 @@
     ".next/dev/types/**/*.ts",
     "types/**/*.d.ts"
   ],
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules", "backups"]
 }

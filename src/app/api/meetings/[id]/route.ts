@@ -1,323 +1,167 @@
-// src/app/api/meetings/[id]/route.ts - UPDATED FOR CONSISTENCY
+// src/app/api/meetings/[id]/route.ts
+// Note: the legacy `query()` helper in lib/db ignores WHERE clauses, so this route uses the Supabase client directly.
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { supabaseServer } from '@/lib/supabase/server';
+import { requireAccess } from '@/lib/auth/permissions';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Ctx = { params: Promise<{ id: string }> };
+
+const MEETING_SELECT = `
+  *,
+  chair:chair_id (id, name, email, role),
+  created_by_user:created_by (id, name),
+  approved_by_user:approved_by (id, name)
+`;
+
+function flatten(m: any) {
+  const { chair, created_by_user, approved_by_user, ...rest } = m;
+  return {
+    ...rest,
+    chair_name: chair?.name ?? null,
+    chair_email: chair?.email ?? null,
+    chair_role: chair?.role ?? null,
+    created_by_name: created_by_user?.name ?? null,
+    approved_by_name: approved_by_user?.name ?? null,
+  };
+}
+
+export async function GET(_request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'view');
+  if (g.error) return g.error;
+
   try {
-    // ✅ FIXED: Await params for Next.js 14+
-    const { id } = await params;
-    const meetingId = id;
-    
-    console.log('🔍 Fetching meeting with ID:', meetingId);
+    const { id: meetingId } = await params;
+    const supabase = supabaseServer();
 
-    // Fetch meeting details
-    const meetingResult = await query(
-      `
-      SELECT 
-        m.id,
-        m.name,
-        m.type,
-        m.start_at,
-        m.period,
-        m.actual_end,
-        m.location,
-        m.chair_id,
-        m.status,
-        m.created_at,
-        m.updated_at,
-        m.approved_by,
-        m.created_by,
-        m.description,
-        m.colour,
-        chair.name AS chair_name,
-        chair.email AS chair_email,
-        chair.role AS chair_role,
-        created_by_user.name AS created_by_name,
-        approved_by_user.name AS approved_by_name
-      FROM meetings m
-      LEFT JOIN users chair ON m.chair_id = chair.id
-      LEFT JOIN users created_by_user ON m.created_by = created_by_user.id
-      LEFT JOIN users approved_by_user ON m.approved_by = approved_by_user.id
-      WHERE m.id = $1
-      `,
-      [meetingId]
-    );
+    const { data: meeting, error } = await supabase.from('meetings').select(MEETING_SELECT).eq('id', meetingId).maybeSingle();
+    if (error) throw error;
+    if (!meeting) return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
 
-    if (meetingResult.rows.length === 0) {
-      console.log('❌ Meeting not found:', meetingId);
-      return NextResponse.json(
-        { error: 'Meeting not found' },
-        { status: 404 }
-      );
-    }
+    const { data: participantRows } = await supabase
+      .from('meeting_participants')
+      .select('users (id, auth_id, name, email, role)')
+      .eq('meeting_id', meetingId)
+      .not('user_id', 'is', null);
+    const participants = (participantRows || []).map((r: any) => r.users).filter(Boolean);
 
-    const meeting = meetingResult.rows[0];
-    console.log('✅ Meeting found:', meeting.id, meeting.name);
+    let agenda: any[] = [];
+    const { data: agendaRows, error: agendaError } = await supabase
+      .from('agenda')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .order('sort_order', { ascending: true });
 
-    // Fetch participants for this meeting
-    const participantsResult = await query(
-      `
-      SELECT 
-        u.id,
-        u.name,
-        u.email,
-        u.role
-      FROM meeting_participants mp
-      JOIN users u ON mp.user_id = u.id
-      WHERE mp.meeting_id = $1
-      `,
-      [meetingId]
-    );
+    if (agendaError) {
+      console.error('Error loading agenda for meeting', meetingId, agendaError.message);
+    } else if (agendaRows?.length) {
+      const agendaIds = agendaRows.map((a) => a.id);
+      const ministryIds = [...new Set(agendaRows.map((a) => a.ministry_id).filter(Boolean))];
 
-    console.log('✅ Participants fetched:', participantsResult.rows.length);
+      const [{ data: docs }, { data: ministries }] = await Promise.all([
+        supabase
+          .from('agenda_documents')
+          .select('id, agenda_id, name, file_url, file_type, file_size, uploaded_by, uploaded_at, metadata')
+          .in('agenda_id', agendaIds)
+          .order('uploaded_at', { ascending: false }),
+        ministryIds.length
+          ? supabase.from('ministries').select('id, name').in('id', ministryIds)
+          : Promise.resolve({ data: [] as { id: number; name: string }[] }),
+      ]);
 
-    // ✅ Fetch agenda items
-    console.log('🔄 Starting agenda fetch...');
-    
-    try {
-      // Full agenda query
-      const agendaResult = await query(
-        `
-        SELECT 
-          a.id,
-          a.name,
-          a.description,
-          a.status,
-          a.sort_order,
-          a.presenter_id,
-          a.ministry_id,
-          a.memo_id,
-          a.cabinet_approval_required,
-          a.meeting_id,
-          a.created_at,
-          a.updated_at,
-          a.created_by,
-          m.name AS ministry_name
-        FROM agenda a
-        LEFT JOIN ministries m ON a.ministry_id = m.id
-        WHERE a.meeting_id = $1
-        ORDER BY a.sort_order ASC
-        `,
-        [meetingId]
-      );
-
-      console.log(`📋 Found ${agendaResult.rows.length} agenda items for meeting ${meetingId}`);
-
-      // ✅ Fetch documents for each agenda - FIXED: Use file_url consistently
-      const agendaWithDocuments = await Promise.all(
-        agendaResult.rows.map(async (agendaItem) => {
-          console.log('🔄 Fetching documents for agenda:', agendaItem.id);
-          
-          const documentsResult = await query(
-            `
-            SELECT 
-              id,
-              agenda_id,
-              name,
-              file_url,
-              file_type,
-              file_size,
-              uploaded_by,
-              uploaded_at,
-              metadata
-            FROM agenda_documents
-            WHERE agenda_id = $1
-            ORDER BY uploaded_at DESC
-            `,
-            [agendaItem.id]
-          );
-
-          console.log(`📄 Found ${documentsResult.rows.length} documents for agenda ${agendaItem.id}`);
-
-          return {
-            ...agendaItem,
-            documents: documentsResult.rows.map(doc => ({
-              ...doc,
-              // Use file_url directly - no fallback to file_path
-              file_url: doc.file_url
-            })) || [],
-            ministry: agendaItem.ministry_name
-              ? { id: agendaItem.ministry_id, name: agendaItem.ministry_name }
-              : null,
-          };
-        })
-      );
-
-      console.log('✅ All agenda documents fetched successfully');
-
-      // ✅ Combine all data
-      const meetingData = {
-        ...meeting,
-        participants: participantsResult.rows || [],
-        agenda: agendaWithDocuments || [],
-      };
-
-      console.log('✅ Meeting fetched successfully:', {
-        id: meetingData.id,
-        name: meetingData.name,
-        participants: meetingData.participants.length,
-        agenda: meetingData.agenda.length,
+      agenda = agendaRows.map((a) => {
+        const ministry = (ministries || []).find((m: any) => m.id === a.ministry_id) || null;
+        return {
+          ...a,
+          ministry_name: ministry?.name ?? null,
+          ministry: ministry ? { id: ministry.id, name: ministry.name } : null,
+          documents: (docs || []).filter((d: any) => d.agenda_id === a.id),
+        };
       });
-
-      return NextResponse.json(meetingData);
-
-    } catch (agendaError) {
-      console.error('❌ Error in agenda section:', agendaError);
-      
-      // Return meeting data without agenda if agenda fails
-      const meetingDataWithoutAgenda = {
-        ...meeting,
-        participants: participantsResult.rows || [],
-        agenda: [], // Empty agenda array
-      };
-      
-      console.log('⚠️ Returning meeting without agenda due to error');
-      return NextResponse.json(meetingDataWithoutAgenda);
     }
 
+    return NextResponse.json({ ...flatten(meeting), participants, agenda });
   } catch (error) {
-    console.error('❌ Error fetching meeting:', error);
+    console.error('Error fetching meeting:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to fetch meeting',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      },
-      { status: 500 }
+      { error: 'Failed to fetch meeting', details: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 },
     );
   }
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'edit');
+  if (g.error) return g.error;
+
   try {
-    // ✅ FIXED: Await params for Next.js 14+
-    const { id } = await params;
-    const meetingId = id;
-    const meetingData = await request.json();
-    
-    console.log('📝 Updating meeting:', { id: meetingId, ...meetingData });
+    const { id: meetingId } = await params;
+    const body = await request.json();
+    const supabase = supabaseServer();
 
-    // Validate required fields
-    if (!meetingData.name || !meetingData.type || !meetingData.start_at || !meetingData.location || !meetingData.status) {
-      return NextResponse.json(
-        { error: 'Missing required fields: name, type, start_at, location, status' },
-        { status: 400 }
-      );
+    if (!body.name || !body.type || !body.start_at || !body.location || !body.status) {
+      return NextResponse.json({ error: 'Missing required fields: name, type, start_at, location, status' }, { status: 400 });
     }
 
-    // Check if meeting exists
-    const existingMeeting = await query(
-      'SELECT id FROM meetings WHERE id = $1',
-      [meetingId]
-    );
+    const { data: existing, error: findError } = await supabase
+      .from('meetings')
+      .select('id, approved_by')
+      .eq('id', meetingId)
+      .maybeSingle();
+    if (findError) throw findError;
+    if (!existing) return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
 
-    if (existingMeeting.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Meeting not found' },
-        { status: 404 }
-      );
+    // Changing approved_by requires the approve permission; otherwise keep the stored value.
+    let approvedBy = existing.approved_by ?? null;
+    if (body.approved_by && String(body.approved_by) !== String(approvedBy ?? '')) {
+      const ga = await requireAccess('meetings', 'approve');
+      if (ga.error) return ga.error;
+      approvedBy = body.approved_by;
     }
 
-    // Update the meeting
-    const result = await query(
-      `
-      UPDATE meetings SET
-        name = $1,
-        type = $2,
-        start_at = $3,
-        period = $4,
-        actual_end = $5,
-        location = $6,
-        chair_id = $7,
-        status = $8,
-        description = $9,
-        colour = $10,
-        approved_by = $11,
-        updated_at = NOW()
-      WHERE id = $12
-      RETURNING *
-      `,
-      [
-        meetingData.name,
-        meetingData.type,
-        meetingData.start_at,
-        meetingData.period || 60,
-        meetingData.actual_end || null,
-        meetingData.location,
-        meetingData.chair_id || null,
-        meetingData.status,
-        meetingData.description || '',
-        meetingData.colour || '#3b82f6',
-        meetingData.approved_by || null,
-        meetingId
-      ]
-    );
+    const period = Number(body.period) || 60;
+    const actualEnd =
+      body.actual_end || new Date(new Date(body.start_at).getTime() + period * 60_000).toISOString();
 
-    if (result.rows.length === 0) {
-      throw new Error('Failed to update meeting');
-    }
+    const { data: updated, error } = await supabase
+      .from('meetings')
+      .update({
+        name: body.name,
+        type: body.type,
+        start_at: body.start_at,
+        period,
+        actual_end: actualEnd,
+        location: body.location,
+        chair_id: body.chair_id || null,
+        status: body.status,
+        description: body.description || '',
+        colour: body.colour || '#3b82f6',
+        approved_by: approvedBy,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', meetingId)
+      .select(MEETING_SELECT)
+      .single();
+    if (error) throw error;
 
-    const updatedMeeting = result.rows[0];
-    console.log('✅ Meeting updated successfully:', updatedMeeting.id);
-
-    return NextResponse.json(updatedMeeting);
-
-  } catch (error) {
-    console.error('❌ Error updating meeting:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to update meeting',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      }, 
-      { status: 500 }
-    );
+    return NextResponse.json(flatten(updated));
+  } catch (error: any) {
+    console.error('Error updating meeting:', error);
+    return NextResponse.json({ error: 'Failed to update meeting', details: error?.message ?? 'Unknown error' }, { status: 500 });
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(_request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('meetings', 'delete');
+  if (g.error) return g.error;
+
   try {
-    // ✅ FIXED: Await params for Next.js 14+
-    const { id } = await params;
-    const meetingId = id;
-    
-    console.log('🗑️ Deleting meeting:', meetingId);
-
-    // Check if meeting exists
-    const existingMeeting = await query(
-      'SELECT id FROM meetings WHERE id = $1',
-      [meetingId]
-    );
-
-    if (existingMeeting.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'Meeting not found' },
-        { status: 404 }
-      );
-    }
-
-    // Delete meeting
-    await query(
-      'DELETE FROM meetings WHERE id = $1',
-      [meetingId]
-    );
-
-    console.log('✅ Meeting deleted successfully:', meetingId);
+    const { id: meetingId } = await params;
+    const { data, error } = await supabaseServer().from('meetings').delete().eq('id', meetingId).select('id');
+    if (error) throw error;
+    if (!data?.length) return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
     return NextResponse.json({ success: true });
-
-  } catch (error) {
-    console.error('❌ Error deleting meeting:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete meeting' },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error('Error deleting meeting:', error);
+    return NextResponse.json({ error: 'Failed to delete meeting', details: error?.message }, { status: 500 });
   }
 }

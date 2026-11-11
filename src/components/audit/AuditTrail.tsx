@@ -1,210 +1,176 @@
-// app/components/audit/AuditTrail.tsx
-"use client";
-import React, { useState } from "react";
+'use client';
 
-const auditLogs = [
-  {
-    id: "1",
-    timestamp: "2024-01-18T10:30:00Z",
-    user: "H.E. The President",
-    action: "APPROVE_MEMO",
-    target: "MEM-001 - Infrastructure Development Proposal",
-    details: "Memo approved and forwarded for implementation",
-    ipAddress: "192.168.1.100",
-    userAgent: "Chrome/120.0.0.0",
-    severity: "info",
-  },
-  {
-    id: "2",
-    timestamp: "2024-01-18T09:15:00Z",
-    user: "Cabinet Secretariat",
-    action: "SCHEDULE_MEETING",
-    target: "Infrastructure Committee Meeting",
-    details: "Meeting scheduled for 2024-01-25 at Conference Room A",
-    ipAddress: "192.168.1.101",
-    userAgent: "Firefox/121.0.0.0",
-    severity: "info",
-  },
-  {
-    id: "3",
-    timestamp: "2024-01-18T08:45:00Z",
-    user: "John Kamau",
-    action: "UPDATE_MEMO",
-    target: "MEM-001 - Infrastructure Development Proposal",
-    details: "Updated project budget and timeline",
-    ipAddress: "192.168.1.102",
-    userAgent: "Safari/17.2.0",
-    severity: "warning",
-  },
-  {
-    id: "4",
-    timestamp: "2024-01-17T16:20:00Z",
-    user: "System",
-    action: "AUTO_BACKUP",
-    target: "Database Backup",
-    details: "Scheduled system backup completed successfully",
-    ipAddress: "127.0.0.1",
-    userAgent: "System/1.0",
-    severity: "info",
-  },
-  {
-    id: "5",
-    timestamp: "2024-01-17T14:30:00Z",
-    user: "Dr. Sarah Mwangi",
-    action: "CREATE_MEMO",
-    target: "MEM-007 - Healthcare Modernization",
-    details: "New memo created and submitted for review",
-    ipAddress: "192.168.1.103",
-    userAgent: "Chrome/120.0.0.0",
-    severity: "info",
-  },
-  {
-    id: "6",
-    timestamp: "2024-01-17T11:15:00Z",
-    user: "Auditor",
-    action: "EXPORT_REPORT",
-    target: "Monthly Activity Report",
-    details: "Comprehensive activity report exported to PDF",
-    ipAddress: "192.168.1.104",
-    userAgent: "Edge/120.0.0.0",
-    severity: "info",
-  },
-];
+/** Audit trail: filterable list of audit_logs with details in a slide-over and CSV export. */
 
-const severityColors = {
-  info: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-  warning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-  error: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-  security: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Download } from 'lucide-react';
+import { Btn, DataTable, DetailList, SlideOver, StatusBadge, type Column, type Tone } from '@/components/ui/kit';
+import { downloadCsv, filterInputCls } from '@/components/reports/csv';
+
+type Entry = {
+  id: number;
+  createdAt: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: number | null;
+  actor: string;
+  actorEmail: string | null;
+  actorRole: string | null;
+  ipAddress: string | null;
+  metadata: Record<string, unknown>;
 };
 
-export default function AuditTrail() {
-  const [filter, setFilter] = useState("all");
-  const [dateRange, setDateRange] = useState("today");
+const fmt = (d: string | null) =>
+  d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+const pretty = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
-  const filteredLogs = auditLogs.filter(log => 
-    filter === "all" || log.severity === filter
-  );
+function toneFor(action: string): Tone {
+  if (/DELETE|SUSPEND/.test(action)) return 'error';
+  if (/PASSWORD|ROLE/.test(action)) return 'warning';
+  if (/CREATE/.test(action)) return 'success';
+  return 'gray';
+}
+
+const columns: Column<Entry>[] = [
+  { key: 'createdAt', header: 'When', sortable: true, cell: (e) => <span className="whitespace-nowrap">{fmt(e.createdAt)}</span> },
+  {
+    key: 'actor',
+    header: 'User',
+    sortable: true,
+    cell: (e) => (
+      <div className="min-w-[140px]">
+        <p className="font-medium text-gray-800 dark:text-white/90">{e.actor}</p>
+        {e.actorRole && <p className="text-theme-xs text-gray-500 dark:text-gray-400">{e.actorRole}</p>}
+      </div>
+    ),
+  },
+  { key: 'action', header: 'Action', sortable: true, cell: (e) => <StatusBadge tone={toneFor(e.action)}>{pretty(e.action)}</StatusBadge> },
+  {
+    key: 'target',
+    header: 'Target',
+    hideBelow: 'md',
+    cell: (e) => {
+      const t = (e.metadata.email ?? e.metadata.name ?? e.metadata.roleKey ?? e.metadata.target) as string | undefined;
+      return (
+        <span className="text-gray-600 dark:text-gray-400">
+          {e.targetType ?? '—'}
+          {t ? ` · ${t}` : e.targetId ? ` #${e.targetId}` : ''}
+        </span>
+      );
+    },
+  },
+  { key: 'ipAddress', header: 'IP', hideBelow: 'lg', cell: (e) => e.ipAddress ?? '—' },
+];
+
+export default function AuditTrail() {
+  const [rows, setRows] = useState<Entry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [action, setAction] = useState('');
+  const [selected, setSelected] = useState<Entry | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const qs = new URLSearchParams();
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      const res = await fetch(`/api/audit?${qs}`, { cache: 'no-store' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to load the audit trail');
+      setRows(json);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load the audit trail');
+    } finally {
+      setLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const actions = useMemo(() => Array.from(new Set(rows.map((r) => r.action))).sort(), [rows]);
+  const visible = useMemo(() => (action ? rows.filter((r) => r.action === action) : rows), [rows, action]);
+
+  const exportCsv = () =>
+    downloadCsv(
+      'audit-trail.csv',
+      ['When', 'User', 'Email', 'Role', 'Action', 'Target type', 'Target id', 'IP', 'Details'],
+      visible.map((e) => [e.createdAt, e.actor, e.actorEmail, e.actorRole, e.action, e.targetType, e.targetId, e.ipAddress, JSON.stringify(e.metadata)]),
+    );
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-      {/* Filters */}
-      <div className="border-b border-gray-200 p-6 dark:border-gray-800">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-            >
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="custom">Custom Range</option>
+    <>
+      <DataTable
+        title="Activity"
+        description="Changes to users, roles and settings are recorded here."
+        rows={visible}
+        rowKey={(e) => e.id}
+        columns={columns}
+        loading={loading}
+        error={error}
+        searchKeys={(e) => [e.actor, e.actorEmail, e.action, e.targetType, JSON.stringify(e.metadata)]}
+        searchPlaceholder="Search activity…"
+        initialSort={{ key: 'createdAt', dir: 'desc' }}
+        pageSize={20}
+        emptyTitle="No activity recorded"
+        emptyDescription="Entries appear as people change users, roles and settings."
+        onRowClick={setSelected}
+        actions={(e) => [{ label: 'View details', onClick: () => setSelected(e) }]}
+        toolbar={
+          <>
+            <input type="date" aria-label="From date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={filterInputCls} />
+            <input type="date" aria-label="To date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={filterInputCls} />
+            <select aria-label="Filter by action" value={action} onChange={(e) => setAction(e.target.value)} className={filterInputCls}>
+              <option value="">All actions</option>
+              {actions.map((a) => (
+                <option key={a} value={a}>
+                  {pretty(a)}
+                </option>
+              ))}
             </select>
+            <Btn size="sm" variant="outline" onClick={exportCsv} disabled={!visible.length}>
+              <Download className="h-4 w-4" /> Export
+            </Btn>
+          </>
+        }
+      />
 
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="h-11 rounded-lg border border-gray-300 bg-transparent px-3 py-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:focus:border-brand-800"
-            >
-              <option value="all">All Severity</option>
-              <option value="info">Info</option>
-              <option value="warning">Warning</option>
-              <option value="error">Error</option>
-              <option value="security">Security</option>
-            </select>
-          </div>
-
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            {filteredLogs.length} log entries found
-          </div>
-        </div>
-      </div>
-
-      {/* Audit Logs */}
-      <div className="p-6">
-        <div className="space-y-4">
-          {filteredLogs.map((log) => (
-            <div
-              key={log.id}
-              className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${severityColors[log.severity]}`}>
-                      {log.severity.charAt(0).toUpperCase() + log.severity.slice(1)}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      {log.action.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    {log.details}
-                  </p>
-                  
-                  <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-500 dark:text-gray-400 sm:grid-cols-3">
-                    <div>
-                      <span className="font-medium">User:</span> {log.user}
-                    </div>
-                    <div>
-                      <span className="font-medium">Target:</span> {log.target}
-                    </div>
-                    <div>
-                      <span className="font-medium">IP:</span> {log.ipAddress}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="ml-4 text-right">
-                  <div className="text-sm text-gray-900 dark:text-white">
-                    {new Date(log.timestamp).toLocaleDateString()}
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
+      <SlideOver
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected ? pretty(selected.action) : ''}
+        description={selected ? fmt(selected.createdAt) : undefined}
+        footer={
+          <Btn variant="outline" onClick={() => setSelected(null)}>
+            Close
+          </Btn>
+        }
+      >
+        {selected && (
+          <div className="space-y-5">
+            <DetailList
+              items={[
+                { label: 'User', value: selected.actor },
+                { label: 'Email', value: selected.actorEmail ?? '—' },
+                { label: 'Role', value: selected.actorRole ?? '—' },
+                { label: 'Target', value: `${selected.targetType ?? '—'}${selected.targetId ? ` #${selected.targetId}` : ''}` },
+                { label: 'IP address', value: selected.ipAddress ?? '—' },
+              ]}
+            />
+            <div>
+              <h4 className="mb-2 text-sm font-semibold text-gray-800 dark:text-white/90">Details</h4>
+              <pre className="max-h-96 overflow-auto rounded-lg bg-gray-50 p-4 text-theme-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                {JSON.stringify(selected.metadata, null, 2)}
+              </pre>
             </div>
-          ))}
-        </div>
-
-        {filteredLogs.length === 0 && (
-          <div className="py-12 text-center">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a3 3 0 00-3-3H5a3 3 0 00-3 3v2a3 3 0 003 3h1a3 3 0 003-3zm6 0v-2a3 3 0 00-3-3h-1a3 3 0 00-3 3v2a3 3 0 003 3h1a3 3 0 003-3zm4-4v-2a3 3 0 00-3-3h-1a3 3 0 00-3 3v2a3 3 0 003 3h1a3 3 0 003-3z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No audit logs found</h3>
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Try adjusting your filters to see more results
-            </p>
           </div>
         )}
-
-        {/* Pagination */}
-        <div className="mt-6 flex items-center justify-between">
-          <div className="text-sm text-gray-500 dark:text-gray-400">
-            Showing 1 to {filteredLogs.length} of {filteredLogs.length} results
-          </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-              Previous
-            </button>
-            <button className="rounded-lg border border-brand-500 bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600">
-              1
-            </button>
-            <button className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-              2
-            </button>
-            <button className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-              Next
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </SlideOver>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 // src/hooks/useMeetingsData.ts
-import { useMeetings, useMeetingsStats } from './useMeetings';
+import { useMeetings, computeMeetingStats } from './useMeetings';
+import { uploadAgendaDocument as uploadToStorage } from '@/lib/agenda-documents';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 
 // Add Agenda interfaces
@@ -92,7 +93,6 @@ export function useMeetingsData() {
     cacheKey: 'all-meetings'
   });
   
-  const statsData = useMeetingsStats();
   
   // State for supporting data with caching
   const [cachedData, setCachedData] = useState<CachedData>(() => {
@@ -146,7 +146,7 @@ export function useMeetingsData() {
   }, [cachedData]);
 
   // Check if supporting data is expired
-  const isSupportingDataExpired = useCallback((type: keyof CachedData['lastFetched']) => {
+  const isSupportingDataExpired = useCallback((type: 'categories' | 'users' | 'settings') => {
     const age = Date.now() - (cachedData.lastFetched[type] || 0);
     return age > CACHE_DURATION;
   }, [cachedData.lastFetched]);
@@ -250,7 +250,7 @@ export function useMeetingsData() {
         const newData = { ...prev };
         
         if (categoriesData) {
-          // ✅ FIX: Handle case where categoriesData might be an object with a data property
+          // Handle case where categoriesData might be an object with a data property
           let categoriesArray = categoriesData;
           
           // If categoriesData is an object with a data property that's an array
@@ -322,7 +322,6 @@ export function useMeetingsData() {
     setAgendaLoading(prev => ({ ...prev, [meetingId]: true }));
 
     try {
-      console.log(`📋 Fetching agendas for meeting: ${meetingId}`);
       const response = await fetch(`/api/agenda?meetingId=${meetingId}`);
       
       if (!response.ok) {
@@ -428,7 +427,6 @@ export function useMeetingsData() {
     }
 
     try {
-      console.log(`📁 Fetching documents for agenda: ${agendaId}`);
       const response = await fetch(`/api/agenda/documents?agendaId=${agendaId}`);
       
       if (!response.ok) {
@@ -512,8 +510,9 @@ export function useMeetingsData() {
   // Update an agenda item
   const updateAgenda = useCallback(async (agendaId: string, updates: any, meetingId: string) => {
     try {
+      // PATCH: partial updates (e.g. sort_order only) are allowed.
       const response = await fetch(`/api/agenda/${agendaId}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
       });
@@ -576,24 +575,14 @@ export function useMeetingsData() {
   }, [fetchAgendas]);
 
   // Upload document to agenda
-  const uploadAgendaDocument = useCallback(async (agendaId: string, file: File) => {
+  const uploadAgendaDocument = useCallback(async (
+    agendaId: string,
+    file: File,
+    onProgress?: (fraction: number) => void,
+  ) => {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('agendaId', agendaId);
-      formData.append('name', file.name);
-
-      const response = await fetch('/api/agenda/documents', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to upload document');
-      }
-
-      const document = await response.json();
+      // Uploads straight to Supabase Storage via a signed URL (no request-body size limit).
+      const document = await uploadToStorage(file, agendaId, { name: file.name, onProgress });
 
       // Invalidate documents cache for this agenda
       setCachedData(prev => ({
@@ -688,7 +677,9 @@ export function useMeetingsData() {
     }));
   }, [meetingsData.meetings]);
 
-  const loading = meetingsData.loading || statsData.loading || supportingLoading;
+  const stats = useMemo(() => computeMeetingStats(meetingsData.meetings || []), [meetingsData.meetings]);
+
+  const loading = meetingsData.loading || supportingLoading;
 
   return {
     // Meetings data
@@ -700,14 +691,7 @@ export function useMeetingsData() {
     meetingsByType: meetingsData.meetingsByType || {},
     
     // Stats
-    stats: statsData.stats || { 
-      today: 0, 
-      thisWeek: 0, 
-      thisMonth: 0, 
-      total: 0, 
-      byType: {}, 
-      byStatus: {} 
-    },
+    stats,
     
     // Supporting data
     categories: cachedData.categories || { 
@@ -739,12 +723,12 @@ export function useMeetingsData() {
     // Loading states
     loading,
     meetingsLoading: meetingsData.loading || false,
-    statsLoading: statsData.loading || false,
+    statsLoading: false,
     supportingLoading: supportingLoading || false,
     
     // Actions
     refetchMeetings: meetingsData.refetch || (() => {}),
-    refetchStats: statsData.refetch || (() => {}),
+    refetchStats: () => {},
     refreshSupportingData: fetchSupportingData,
     
     // Agenda actions
@@ -753,15 +737,14 @@ export function useMeetingsData() {
     addAgenda: addAgenda || (async () => {}),
     updateAgenda: updateAgenda || (async () => {}),
     deleteAgenda: deleteAgenda || (async () => {}),
-    uploadAgendaDocument: uploadAgendaDocument || (async () => {}),
+    uploadAgendaDocument,
     deleteAgendaDocument: deleteAgendaDocument || (async () => {}),
     
     refreshAll: () => {
       meetingsData.refetch?.();
-      statsData.refetch?.();
       fetchSupportingData();
     },
     
-    error: meetingsData.error || statsData.error || null
+    error: meetingsData.error || null
   };
 }

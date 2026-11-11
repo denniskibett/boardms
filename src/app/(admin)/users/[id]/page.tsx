@@ -1,98 +1,39 @@
-import { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { redirect } from "next/navigation";
-import UserProfile from "@/components/users/UserProfile";
+import type { Metadata } from 'next';
+import { notFound, redirect } from 'next/navigation';
+import { getSessionUser, userCan } from '@/lib/auth/permissions';
 import { supabaseServer } from '@/lib/supabase/server';
+import UserProfile from '@/components/users/UserProfile';
+import AccessDenied from '@/components/users/AccessDenied';
+import type { UserRecord } from '@/components/users/useUserActions';
 
-interface Props {
-  params: {
-    id: string;
-  };
+type Props = { params: Promise<{ id: string }> };
+
+const COLUMNS = 'id, auth_id, name, email, role, image, status, phone, last_login, created_at';
+
+async function loadUser(id: string) {
+  const q = supabaseServer().from('users').select(COLUMNS);
+  const { data } = await (/^\d+$/.test(id) ? q.eq('id', Number(id)) : q.eq('auth_id', id)).maybeSingle();
+  return (data as UserRecord | null) ?? null;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const supabase = supabaseServer();
-
-  try {
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("*")
-      .eq("auth_id", params.id)
-      .single();
-
-    if (error || !user) {
-      console.error("Error fetching user for metadata:", error);
-      return {
-        title: "User Not Found | E-Cabinet System",
-      };
-    }
-
-    return {
-      title: `${user.name} | User Profile | E-Cabinet System`,
-      description: `Profile page for ${user.name} - ${user.role}`,
-    };
-  } catch (error) {
-    console.error("Unexpected error in generateMetadata:", error);
-    return {
-      title: "User Profile | E-Cabinet System",
-    };
-  }
+  const { id } = await params;
+  const me = await getSessionUser();
+  if (!me || !userCan(me, 'users', 'view')) return { title: 'User | boardms' };
+  const user = await loadUser(id);
+  return { title: user ? `${user.name} | Users | boardms` : 'User not found | boardms' };
 }
 
-export default async function UserProfilePage({ params }: Props) {
+export default async function UserPage({ params }: Props) {
   const { id } = await params;
-  const session = await getServerSession(authOptions);
+  const me = await getSessionUser();
+  if (!me) redirect('/signin');
 
-  if (!session) {
-    redirect("/auth/signin");
-  }
+  const user = await loadUser(id);
+  const self = !!user && (user.auth_id === me.id || user.email?.toLowerCase() === me.email?.toLowerCase());
+  if (!userCan(me, 'users', 'view') && !self) return <AccessDenied what="this user" />;
+  if (!user) notFound();
+  if (self) redirect('/profile');
 
-  const supabase = supabaseServer();
-
-  try {
-    // Fetch user from custom table using auth_id (UUID)
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("*")
-      .eq("auth_id", id)
-      .single();
-
-    if (userError || !user) {
-      console.error("Error fetching user:", userError);
-      notFound();
-    }
-
-    // Fetch ministry if available
-    let ministry = null;
-    if (user.ministry_id) {
-      const { data: ministryData, error: ministryError } = await supabase
-        .from("ministries")
-        .select("*")
-        .eq("id", user.ministry_id)
-        .single();
-
-      if (ministryError) {
-        console.error("Error fetching ministry:", ministryError);
-      } else {
-        ministry = ministryData;
-      }
-    }
-
-    return (
-      
-      <div className="space-y-6">
-        
-        <UserProfile
-          user={user}
-          ministry={ministry}
-          currentUser={session.user}
-        />
-      </div>
-    );
-  } catch (error) {
-    console.error("Unexpected error in user profile page:", error);
-    notFound();
-  }
+  return <UserProfile user={user} />;
 }

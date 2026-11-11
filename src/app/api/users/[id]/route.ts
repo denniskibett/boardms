@@ -1,132 +1,122 @@
+// /api/users/[id] — id is users.id (number) or the Supabase auth UUID.
+//   GET    users.view, or your own record
+//   PUT    users.edit  (name, email, phone, image, status, role)
+//   DELETE users.delete (not yourself)
 import { NextRequest, NextResponse } from 'next/server';
-import { query } from '@/lib/db';
+import { requireAccess, requireUser, userCan } from '@/lib/auth/permissions';
+import { supabaseServer } from '@/lib/supabase/server';
+import { logAudit } from '@/lib/audit';
+import {
+  FULL_COLUMNS,
+  USER_STATUSES,
+  bad,
+  findUser,
+  guardRoleAssignment,
+  guardTarget,
+  isSelf,
+  resolveRole,
+} from '../_shared';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params; // Await the params
-    const result = await query(`
-      SELECT 
-        u.*,
-        m.id as ministry_id,
-        m.name as ministry_name,
-        m.acronym as ministry_acronym
-      FROM users u
-      LEFT JOIN ministries m ON u.ministry_id = m.id
-      WHERE u.id = $1
-    `, [id]);
+export const dynamic = 'force-dynamic';
 
-    if (result.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
+type Ctx = { params: Promise<{ id: string }> };
 
-    return NextResponse.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch user' },
-      { status: 500 }
-    );
-  }
+export async function GET(_req: NextRequest, { params }: Ctx) {
+  const g = await requireUser();
+  if (g.error) return g.error;
+  const { id } = await params;
+
+  const user = await findUser(id);
+  if (!user) return bad('User not found', 404);
+  if (!isSelf(g.user, user) && !userCan(g.user, 'users', 'view')) return bad('Forbidden', 403);
+  return NextResponse.json(user);
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params; // Await the params
-    const body = await request.json();
-    const { name, image, email, role, status, phone, ministry_id } = body;
+export async function PUT(request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('users', 'edit');
+  if (g.error) return g.error;
+  const { id } = await params;
 
-    console.log('Updating user:', id, body);
+  const user = await findUser(id);
+  if (!user) return bad('User not found', 404);
+  const denied = guardTarget(g.user, user);
+  if (denied) return denied;
 
-    // Validate required fields
-    if (!name || !email || !role) {
-      return NextResponse.json(
-        { error: 'Name, email, and role are required' },
-        { status: 400 }
-      );
-    }
+  const body = await request.json().catch(() => ({}));
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-    // Check if email is already taken by another user
-    const existingUser = await query(
-      'SELECT id FROM users WHERE email = $1 AND id != $2',
-      [email.toLowerCase(), id]
-    );
-
-    if (existingUser.rows.length > 0) {
-      return NextResponse.json(
-        { error: 'Email is already taken by another user' },
-        { status: 400 }
-      );
-    }
-
-    // Update user
-    const result = await query(
-      `UPDATE users 
-       SET name = $1, image = $2, email = $3, role = $4, status = $5, phone = $6, ministry_id = $7, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $8 
-       RETURNING *`,
-      [name, image || null, email.toLowerCase(), role, status || 'active', phone || null, ministry_id || null, id]
-    );
-
-    if (result.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    const updatedUser = result.rows[0];
-
-    return NextResponse.json(updatedUser);
-  } catch (error) {
-    console.error('Error updating user:', error);
-    return NextResponse.json(
-      { error: 'Failed to update user' },
-      { status: 500 }
-    );
+  if (body.name !== undefined) {
+    const name = String(body.name).trim();
+    if (!name) return bad('Name is required');
+    patch.name = name;
   }
-}
+  if (body.phone !== undefined) patch.phone = body.phone ? String(body.phone) : null;
+  if (body.image !== undefined) patch.image = body.image ? String(body.image) : null;
+  if (body.status !== undefined) {
+    if (!USER_STATUSES.includes(body.status)) return bad('Invalid status');
+    if (isSelf(g.user, user) && body.status !== 'active') return bad('You cannot deactivate your own account');
+    patch.status = body.status;
+  }
+  if (body.role !== undefined) {
+    const role = await resolveRole(body.role);
+    if (!role) return bad('Choose a valid role');
+    const r = guardRoleAssignment(g.user, role.role_key);
+    if (r) return r;
+    patch.role = role.name;
+  }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params; // Await the params
-    console.log('Deleting user:', id);
-
-    // Check if user exists
-    const userCheck = await query(
-      'SELECT id, name FROM users WHERE id = $1',
-      [id]
-    );
-
-    if (userCheck.rows.length === 0) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+  const db = supabaseServer();
+  if (body.email !== undefined) {
+    const email = String(body.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return bad('Enter a valid email address');
+    if (email !== user.email.toLowerCase()) {
+      const { data: taken } = await db.from('users').select('id').eq('email', email).neq('id', user.id).maybeSingle();
+      if (taken) return bad('Another user already has this email', 409);
+      if (user.auth_id) {
+        const { error } = await db.auth.admin.updateUserById(user.auth_id, { email, email_confirm: true });
+        if (error) return bad(`Could not change the sign-in email: ${error.message}`);
+      }
+      patch.email = email;
     }
+  }
 
-    // Delete the user
-    await query('DELETE FROM users WHERE id = $1', [id]);
+  const { data, error } = await db.from('users').update(patch).eq('id', user.id).select(FULL_COLUMNS).single();
+  if (error) {
+    console.error('PUT /api/users/[id]:', error.message);
+    return bad(`Failed to update user: ${error.message}`, 500);
+  }
 
-    return NextResponse.json({ 
-      message: `User ${userCheck.rows[0].name} deleted successfully`
+  if (user.auth_id && patch.status && patch.status !== user.status) {
+    await db.auth.admin.updateUserById(user.auth_id, {
+      ban_duration: patch.status === 'suspended' ? '876000h' : 'none',
     });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete user' },
-      { status: 500 }
-    );
   }
+  await logAudit(g.user, 'USER_UPDATE', 'user', user.id, { email: user.email, changes: Object.keys(patch).filter((k) => k !== 'updated_at') });
+  return NextResponse.json(data);
+}
+
+export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('users', 'delete');
+  if (g.error) return g.error;
+  const { id } = await params;
+
+  const user = await findUser(id);
+  if (!user) return bad('User not found', 404);
+  if (isSelf(g.user, user)) return bad('You cannot delete your own account');
+  const denied = guardTarget(g.user, user);
+  if (denied) return denied;
+
+  const db = supabaseServer();
+  const { error } = await db.from('users').delete().eq('id', user.id);
+  if (error) {
+    console.error('DELETE /api/users/[id]:', error.message);
+    return bad('This user is linked to meetings or documents. Suspend the account instead.', 409);
+  }
+  if (user.auth_id) {
+    const { error: authError } = await db.auth.admin.deleteUser(user.auth_id);
+    if (authError) console.error('DELETE /api/users/[id] auth:', authError.message);
+  }
+
+  await logAudit(g.user, 'USER_DELETE', 'user', user.id, { email: user.email, name: user.name });
+  return NextResponse.json({ ok: true });
 }

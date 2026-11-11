@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeftIcon, MailIcon } from "@/icons";
-import Input from "@/components/form/input/InputField";
+import { TextInput as Input } from "@/components/ui/kit";
 import Label from "@/components/form/Label";
-import Button from "@/components/ui/button/Button";
+import { Btn as Button } from "@/components/ui/kit";
 import { supabase } from "@/lib/supabase/client";
 import { useSystemSettings } from '@/context/SystemSettingsContext';
 import Image from 'next/image';
@@ -183,11 +183,11 @@ export default function ForgotPasswordForm() {
                 <div>
                   <Button 
                     className="w-full" 
-                    size="lg"
+                    size="md"
                     disabled={loading || !email.trim()}
                     type="submit"
                     variant="primary"
-                    isLoading={loading}
+                    loading={loading}
                   >
                     {loading ? 'Sending reset link...' : 'Send reset link'}
                   </Button>

@@ -1,34 +1,22 @@
-// app/(admin)/reports/page.tsx
-import type { Metadata } from "next";
-import ReportsDashboard from "@/components/reports/ReportsDashboard";
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { getSessionUser, userCan } from '@/lib/auth/permissions';
+import { PageHeader } from '@/components/ui/kit';
+import ReportsDashboard from '@/components/reports/ReportsDashboard';
+import AccessDenied from '@/components/users/AccessDenied';
 
 export const metadata: Metadata = {
-  title: "Reports & Analytics | E-Cabinet System",
-  description: "System reports and performance analytics",
+  title: 'Reports | boardms',
+  description: 'Meetings, agenda, memos and user figures',
 };
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const user = await getSessionUser();
+  if (!user) redirect('/signin');
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Reports & Analytics
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            System performance metrics and analytical reports
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700">
-            Export Report
-          </button>
-          <button className="rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600">
-            Generate Report
-          </button>
-        </div>
-      </div>
-      <ReportsDashboard />
+    <div>
+      <PageHeader title="Reports" description="Figures for meetings, agenda items, memos and action letters over a chosen period." />
+      {userCan(user, 'reports', 'view') ? <ReportsDashboard /> : <AccessDenied what="reports" />}
     </div>
   );
 }

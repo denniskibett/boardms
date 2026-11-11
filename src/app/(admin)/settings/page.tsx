@@ -1,25 +1,26 @@
-import type { Metadata } from "next";
-import SystemSettings from "@/components/settings/SystemSettings";
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { getSessionUser, userCan } from '@/lib/auth/permissions';
+import { PageHeader } from '@/components/ui/kit';
+import SystemSettings from '@/components/settings/SystemSettings';
+import AccessDenied from '@/components/users/AccessDenied';
 
 export const metadata: Metadata = {
-  title: "System Settings | E-Cabinet System",
-  description: "Configure system settings and preferences",
+  title: 'System Settings | boardms',
+  description: 'Branding and configuration',
 };
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const user = await getSessionUser();
+  if (!user) redirect('/signin');
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            System Settings
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Configure system preferences and global settings
-          </p>
-        </div>
-      </div>
-      <SystemSettings />
+    <div>
+      <PageHeader title="System settings" description="Branding, regional settings, notifications and security." />
+      {userCan(user, 'settings', 'view') ? (
+        <SystemSettings canEdit={userCan(user, 'settings', 'edit')} />
+      ) : (
+        <AccessDenied what="system settings" />
+      )}
     </div>
   );
 }

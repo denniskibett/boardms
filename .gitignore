@@ -37,3 +37,7 @@ yarn-error.log*
 next-env.d.ts
 
 /generated/prisma
+
+# Generated test logins (scripts/seed-test-users.ts)
+test-users.local.json
+/backups/

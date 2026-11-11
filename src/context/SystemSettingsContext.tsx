@@ -3,6 +3,8 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
+const SETTINGS_CACHE_KEY = 'boardms:system-settings';
+
 interface SystemSettings {
   id: number;
   name: string;
@@ -134,19 +136,34 @@ export function SystemSettingsProvider({ children }: { children: React.ReactNode
     return defaultSettings;
   });
   
-  const [loading, setLoading] = useState(() => {
-    // If we have server-side data, we're not loading
-    return !(typeof window !== 'undefined' && window.__INITIAL_SYSTEM_SETTINGS__);
-  });
+  // Same value on server and first client render (avoids hydration mismatches).
+  const [loading, setLoading] = useState(true);
+
+  // Right after mount: use server-provided or cached settings straight away, then refresh in the background.
+  useEffect(() => {
+    if (window.__INITIAL_SYSTEM_SETTINGS__) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+      if (cached) {
+        setLoading(false);
+        const merged = { ...defaultSettings, ...JSON.parse(cached) };
+        setSettings(merged);
+        if (merged.primary_color) document.documentElement.style.setProperty('--primary-color', merged.primary_color);
+        if (merged.secondary_color) document.documentElement.style.setProperty('--secondary-color', merged.secondary_color);
+      }
+    } catch {
+      /* ignore bad cache */
+    }
+  }, []);
   
   const [error, setError] = useState<string | null>(null);
 
   const fetchSettings = async () => {
     try {
-      setLoading(true);
       setError(null);
-
-      console.log('🔄 Fetching system settings from API...');
       const response = await fetch('/api/system-settings');
 
       if (!response.ok) {
@@ -161,13 +178,11 @@ export function SystemSettingsProvider({ children }: { children: React.ReactNode
       document.documentElement.style.setProperty('--secondary-color', mergedSettings.secondary_color);
       
       setSettings(mergedSettings);
-      
-      console.log('✅ System settings loaded from API:', {
-        name: mergedSettings.name,
-        timezone: mergedSettings.timezone,
-        logo: mergedSettings.logo_primary,
-        color: mergedSettings.primary_color
-      });
+      try {
+        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(data));
+      } catch {
+        /* storage full or blocked */
+      }
       
     } catch (err) {
       console.error('❌ Failed to fetch system settings:', err);

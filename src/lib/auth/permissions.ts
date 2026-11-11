@@ -1,9 +1,119 @@
-// src/lib/auth/permissions.ts
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { supabaseServer } from "@/lib/supabase/server";
+// src/lib/auth/permissions.ts — server-side RBAC (API routes, server components)
+import { getServerSession } from 'next-auth';
+import { NextResponse } from 'next/server';
+import { authOptions } from '@/lib/auth';
+import { supabaseServer } from '@/lib/supabase/server';
+import {
+  can,
+  normalizePermissions,
+  normalizeRoleKey,
+  type Action,
+  type ModuleKey,
+  type Permissions,
+} from '@/lib/rbac';
 
-const roleHierarchy: { [key: string]: number } = {
+export interface SessionUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  role: string | null; // normalised role key, e.g. "cabinet_secretary"
+  permissions: Permissions;
+}
+
+// Small in-memory cache so every API call doesn't hit system_roles.
+const CACHE_MS = 30_000;
+const cache = new Map<string, { at: number; perms: Permissions }>();
+
+export function invalidateRolePermissions(roleKey?: string) {
+  if (roleKey) cache.delete(roleKey);
+  else cache.clear();
+}
+
+export async function getRolePermissions(roleKey: string | null): Promise<Permissions> {
+  if (!roleKey) return {};
+  const hit = cache.get(roleKey);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.perms;
+  const { data, error } = await supabaseServer()
+    .from('system_roles')
+    .select('permissions')
+    .eq('role_key', roleKey)
+    .maybeSingle();
+  if (error) console.error('RBAC: could not load role permissions', error.message);
+  const perms = normalizePermissions(data?.permissions);
+  cache.set(roleKey, { at: Date.now(), perms });
+  return perms;
+}
+
+export async function getSessionUser(): Promise<SessionUser | null> {
+  const session = await getServerSession(authOptions);
+  const u = session?.user as { id?: string; email?: string; name?: string; role?: string } | undefined;
+  if (!u?.id && !u?.email) return null;
+  const role = normalizeRoleKey(u.role);
+  return {
+    id: String(u.id ?? ''),
+    email: String(u.email ?? ''),
+    name: u.name,
+    role,
+    permissions: await getRolePermissions(role),
+  };
+}
+
+export function userCan(user: SessionUser | null, module: ModuleKey, action: Action = 'view') {
+  return !!user && can(user.role, user.permissions, module, action);
+}
+
+type Guard = { user: SessionUser; error?: undefined } | { user?: undefined; error: NextResponse };
+
+/** Signed-in check only. `const g = await requireUser(); if (g.error) return g.error;` */
+export async function requireUser(): Promise<Guard> {
+  const user = await getSessionUser();
+  if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
+  return { user };
+}
+
+/** Signed-in + permission. `const g = await requireAccess('meetings', 'create'); if (g.error) return g.error;` */
+export async function requireAccess(module: ModuleKey, action: Action = 'view'): Promise<Guard> {
+  const g = await requireUser();
+  if (g.error) return g;
+  if (!userCan(g.user, module, action)) {
+    return { error: NextResponse.json({ error: `Forbidden: requires ${module}.${action}` }, { status: 403 }) };
+  }
+  return g;
+}
+
+/** Maps an HTTP method to the action it needs. */
+export function actionForMethod(method: string): Action {
+  switch (method.toUpperCase()) {
+    case 'POST':
+      return 'create';
+    case 'PUT':
+    case 'PATCH':
+      return 'edit';
+    case 'DELETE':
+      return 'delete';
+    default:
+      return 'view';
+  }
+}
+
+/* ---- Backwards-compatible helpers used by older code ------------------ */
+
+export async function getUserRole() {
+  return (await getSessionUser())?.role ?? null;
+}
+
+export async function hasServerPermission(module: string, permission: string) {
+  const user = await getSessionUser();
+  const action = (normalizePermissions({ [module]: [permission] })[module as ModuleKey]?.[0] ?? 'view') as Action;
+  return userCan(user, module as ModuleKey, action);
+}
+
+export async function hasServerPermissionKey(permissionKey: string) {
+  const i = permissionKey.lastIndexOf('_');
+  return hasServerPermission(permissionKey.slice(0, i), permissionKey.slice(i + 1));
+}
+
+const roleHierarchy: Record<string, number> = {
   president: 1,
   deputy_president: 2,
   prime_cabinet_secretary: 3,
@@ -18,90 +128,10 @@ const roleHierarchy: { [key: string]: number } = {
   admin: 12,
 };
 
-// Fetch role permissions from database
-async function getRolePermissionsFromDB(roleKey: string): Promise<any> {
-  const supabase = supabaseServer();
-  const { data, error } = await supabase
-    .from('system_roles')
-    .select('permissions')
-    .eq('role_key', roleKey)
-    .single();
-  
-  if (error || !data) {
-    console.error('Error fetching role permissions:', error);
-    return null;
-  }
-  
-  return data.permissions;
-}
-
-export async function getUserRole() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.role) return null;
-  return session.user.role.toLowerCase().replace(/\s+/g, '_');
-}
-
-export async function hasServerPermission(module: string, permission: string) {
+export async function isRoleAtLeast(minRole: string) {
   const role = await getUserRole();
   if (!role) return false;
-  
-  // Admin and sysadmin have all permissions
-  if (role === 'admin' || role === 'sysadmin') {
-    return true;
-  }
-  
-  // Fetch permissions from database
-  const rolePermissions = await getRolePermissionsFromDB(role);
-  if (!rolePermissions) return false;
-  
-  const modulePerms = rolePermissions[module];
-  if (!modulePerms) return false;
-  
-  return modulePerms.includes(permission);
-}
-
-// Direct permission check using permission key (e.g., 'memos_create')
-export async function hasServerPermissionKey(permissionKey: string) {
-  const [module, action] = permissionKey.split('_');
-  return hasServerPermission(module, action);
-}
-
-export async function isRoleAtLeast(minRole: string) {
-  const currentRole = await getUserRole();
-  if (!currentRole) return false;
-  
-  const currentLevel = roleHierarchy[currentRole];
-  const requiredLevel = roleHierarchy[minRole];
-  
-  if (!currentLevel || !requiredLevel) return false;
-  
-  return currentLevel <= requiredLevel;
-}
-
-export async function canAccessResource(resourceType: string, resourceCreatorRole?: string) {
-  const currentRole = await getUserRole();
-  if (!currentRole) return false;
-  
-  // Administrators can access everything
-  if (currentRole === 'admin' || currentRole === 'sysadmin') return true;
-  
-  // Executives can access all resources
-  if (['president', 'deputy_president', 'prime_cabinet_secretary'].includes(currentRole)) {
-    return true;
-  }
-  
-  // For other roles, implement specific logic based on resource type
-  switch (resourceType) {
-    case 'memo':
-      if (currentRole === 'cabinet_secretary' && resourceCreatorRole === 'principal_secretary') {
-        return true;
-      }
-      break;
-    case 'committee':
-      break;
-    default:
-      return false;
-  }
-  
-  return false;
+  const cur = roleHierarchy[role];
+  const req = roleHierarchy[minRole];
+  return !!cur && !!req && cur <= req;
 }

@@ -1,0 +1,28 @@
+# Dependencies & build output (Vercel installs/builds itself)
+/node_modules/
+/.next/
+/generated/prisma/
+
+# Secrets — Vercel supplies env vars from the project settings
+.env
+.env.*
+*.pem
+
+# Data dumps / exports — never ship these
+*.sql
+*.csv
+2.json
+3.json
+Untitled.json
+v_user_roles_rows.json
+/backups/
+/supabase/
+*.py
+import-all-data.js
+insert-agencies.js
+middleware.ts.bak
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store

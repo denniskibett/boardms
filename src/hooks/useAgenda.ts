@@ -115,12 +115,14 @@ export function useAgenda({ meetingId, autoFetch = true }: UseAgendaOptions) {
     addAgenda: (data: any) => addAgenda(meetingId, data),
     updateAgenda: (agendaId: string, updates: any) => updateAgenda(agendaId, updates, meetingId),
     deleteAgenda: (agendaId: string) => deleteAgenda(agendaId, meetingId),
-    uploadDocument: (agendaId: string, file: File) => uploadAgendaDocument(agendaId, file),
+    uploadDocument: (agendaId: string, file: File, onProgress?: (fraction: number) => void) =>
+      uploadAgendaDocument(agendaId, file, onProgress),
     deleteDocument: (documentId: string, agendaId: string) => deleteAgendaDocument(documentId, agendaId),
     
     // Reorder agendas
     reorderAgendas: async (reorderedAgendas: any[]) => {
-      const promises = reorderedAgendas.map((agenda, index) => 
+      // updateAgenda sends a PATCH, so a sort_order-only update is valid.
+      const promises = reorderedAgendas.map((agenda, index) =>
         updateAgenda(agenda.id, { sort_order: index + 1 }, meetingId)
       );
       await Promise.all(promises);

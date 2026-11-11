@@ -1,189 +1,66 @@
 "use client";
-import React, { useState } from 'react';
-import { Plus, Loader2 } from 'lucide-react';
+// Inline "add item by title" row for a meeting's agenda. Full details are edited in AgendaSlideOver.
+import React, { useState } from "react";
+import { Plus } from "lucide-react";
+import { Btn, TextInput } from "@/components/ui/kit";
+import { usePermissions } from "@/hooks/usePermissions";
 
 interface QuickAddAgendaProps {
   meetingId: string;
-  onAgendaAdded: () => void;
+  onAgendaAdded: (agenda?: any) => void;
 }
 
 const QuickAddAgenda: React.FC<QuickAddAgendaProps> = ({ meetingId, onAgendaAdded }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-  });
+  const { can } = usePermissions();
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!can("agenda", "create")) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name.trim()) {
-      alert('Agenda name is required');
-      return;
-    }
-
+    if (!name.trim()) return setError("Enter a title for the agenda item.");
+    setSaving(true);
+    setError(null);
     try {
-      setIsLoading(true);
-      
-      // Get the next sort_order
-      const nextSortOrder = await getNextSortOrder(meetingId);
-      
-      console.log('🔢 Next sort order calculated:', nextSortOrder);
-
-      // Prepare minimal data that matches your database schema
-      const agendaData = {
-        name: formData.name.trim(),
-        meeting_id: parseInt(meetingId), 
-        sort_order: nextSortOrder,
-        status: 'draft', 
-        description: '', 
-        presenter_id: null, 
-        ministry_id: null, 
-        cabinet_approval_required: false,
-        memo_id: null, 
-        created_by: null,
-      };
-
-      console.log('🔄 Adding agenda with data:', agendaData);
-
-      const response = await fetch('/api/agenda', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(agendaData),
+      // The API appends the item at the end of the meeting's agenda when sort_order is omitted.
+      const res = await fetch("/api/agenda", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), meeting_id: Number(meetingId), status: "draft" }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('❌ API Error:', errorData);
-        throw new Error(errorData.error || errorData.details || 'Failed to add agenda');
-      }
-
-      const newAgenda = await response.json();
-      console.log('✅ Agenda added successfully:', newAgenda);
-
-      // Reset form and close
-      setFormData({ name: '' });
-      setIsOpen(false);
-      
-      // Force refresh by calling the callback - THIS IS KEY
-      onAgendaAdded();
-      
-      // Additional force refresh after a short delay
-      setTimeout(() => {
-        onAgendaAdded();
-      }, 500);
-      
-    } catch (error) {
-      console.error('❌ Error adding agenda:', error);
-      alert(error instanceof Error ? error.message : 'Failed to add agenda item');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.details || data.error || "Failed to add agenda item");
+      setName("");
+      onAgendaAdded(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add agenda item");
     } finally {
-      setIsLoading(false);
+      setSaving(false);
     }
   };
-
-  // Function to get the next sort order by fetching current agenda items
-  const getNextSortOrder = async (meetingId: string): Promise<number> => {
-    try {
-      console.log('🔄 Fetching current agenda items for meeting:', meetingId);
-      
-      const response = await fetch(`/api/agenda?meetingId=${meetingId}&t=${Date.now()}`); // Add cache bust
-      
-      if (response.ok) {
-        const agendaItems = await response.json();
-        console.log('📋 Current agenda items:', agendaItems);
-        
-        if (agendaItems.length === 0) {
-          return 1;
-        }
-        
-        // Find the highest sort_order
-        const maxSortOrder = Math.max(...agendaItems.map((item: any) => item.sort_order || 0));
-        const nextSortOrder = maxSortOrder + 1;
-        
-        return nextSortOrder;
-      } else {
-        console.warn('⚠️ Failed to fetch agenda items, defaulting to 1');
-        return 1;
-      }
-    } catch (error) {
-      console.error('❌ Error getting sort order:', error);
-      return 1;
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  if (!isOpen) {
-    return (
-      <div className="mb-6">
-        <button
-          onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Quick Add Agenda Item
-        </button>
-      </div>
-    );
-  }
 
   return (
-    <div className="mb-6 rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-white/3">
-      <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90 mb-4">
-        Quick Add Agenda Item
-      </h3>
-      
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Agenda Item Name *
-          </label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            placeholder="Enter agenda item name"
-            autoFocus
-          />
-        </div>
-
-        <div className="flex gap-3 pt-4">
-          <button
-            type="submit"
-            disabled={isLoading || !formData.name.trim()}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            {isLoading ? 'Adding...' : 'Add Agenda Item'}
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            disabled={isLoading}
-            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
+    <form onSubmit={handleSubmit} className="space-y-1.5">
+      <div className="flex gap-2">
+        <TextInput
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (error) setError(null);
+          }}
+          placeholder="Add an agenda item"
+          aria-label="New agenda item title"
+          disabled={saving}
+        />
+        <Btn type="submit" loading={saving} aria-label="Add agenda item">
+          <Plus className="h-4 w-4" />
+          <span className="hidden sm:inline">Add</span>
+        </Btn>
+      </div>
+      {error && <p className="text-theme-xs text-error-500">{error}</p>}
+    </form>
   );
 };
 

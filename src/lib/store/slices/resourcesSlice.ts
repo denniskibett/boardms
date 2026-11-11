@@ -1,16 +1,15 @@
 // src/lib/store/slices/resourcesSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { supabase } from '@/lib/supabase/client';
 
-interface Resource {
+export interface Resource {
   id: number;
   name: string;
   display_name: string;
   resource_type_id: number;
   year: number;
   description?: string;
-  metadata?: any;
-  created_by: string;
+  metadata?: Record<string, unknown> | null;
+  created_by: number | null;
   created_at: string;
   updated_at: string;
   resource_type_name?: string;
@@ -18,14 +17,14 @@ interface Resource {
   file_count?: number;
 }
 
-interface ResourceCategory {
+export interface ResourceCategory {
   id: number;
   name: string;
   type: string;
-  metadata?: any;
+  metadata?: Record<string, unknown> | null;
 }
 
-interface ResourceFile {
+export interface ResourceFile {
   id: number;
   resource_id: number;
   name: string;
@@ -33,10 +32,10 @@ interface ResourceFile {
   file_type: string;
   file_url: string;
   file_size: number;
-  ministry_id?: number;
-  uploaded_by: string;
+  ministry_id?: number | null;
+  uploaded_by: number | null;
   uploaded_at: string;
-  metadata?: any;
+  metadata?: Record<string, unknown> | null;
   ministry_name?: string;
   uploaded_by_name?: string;
 }
@@ -59,245 +58,77 @@ const initialState: ResourcesState = {
   lastFetched: null,
 };
 
-// Async thunks
+// Async thunks — everything goes through the guarded /api/resources routes (never straight to Supabase from the browser).
+async function call<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
+  return json as T;
+}
+
 export const fetchResources = createAsyncThunk(
   'resources/fetchResources',
-  async (filters?: { year?: number; type?: string }) => {
-    let query = supabase
-      .from('resources')
-      .select(`
-        *,
-        categories!resource_type_id(name),
-        users!created_by(name),
-        resource_files(count)
-      `);
-
-    if (filters?.year) {
-      query = query.eq('year', filters.year);
-    }
-    if (filters?.type) {
-      query = query.eq('categories.name', filters.type);
-    }
-
-    const { data, error } = await query
-      .order('year', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    return data.map(resource => ({
-      ...resource,
-      resource_type_name: resource.categories?.name,
-      created_by_name: resource.users?.name,
-      file_count: resource.resource_files?.[0]?.count || 0
-    }));
+  async (filters?: { year?: number; typeId?: number }) => {
+    const qs = new URLSearchParams();
+    if (filters?.year) qs.set('year', String(filters.year));
+    if (filters?.typeId) qs.set('type_id', String(filters.typeId));
+    return call<Resource[]>(`/api/resources${qs.toString() ? `?${qs}` : ''}`);
   }
 );
 
-export const fetchCategories = createAsyncThunk(
-  'resources/fetchCategories',
-  async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('type', 'resource_type')
-      .order('name');
-
-    if (error) throw error;
-    return data;
-  }
+export const fetchCategories = createAsyncThunk('resources/fetchCategories', async () =>
+  call<ResourceCategory[]>('/api/categories?type=resource_type')
 );
 
-export const createResource = createAsyncThunk(
-  'resources/createResource',
-  async (resourceData: {
-    name: string;
-    display_name: string;
-    resource_type_id: number;
-    year: number;
-    description?: string;
-    metadata?: any;
-  }) => {
-    const folderName = resourceData.name.toUpperCase().replace(/ /g, '-').replace(/[^A-Z0-9-]/g, '');
-    
-    const { data, error } = await supabase
-      .from('resources')
-      .insert([{
-        ...resourceData,
-        name: folderName,
-        created_by: (await supabase.auth.getUser()).data.user?.id
-      }])
-      .select(`
-        *,
-        categories!resource_type_id(name),
-        users!created_by(name)
-      `)
-      .single();
+export type ResourceInput = {
+  name: string;
+  display_name: string;
+  resource_type_id: number;
+  year: number;
+  description?: string;
+  metadata?: Record<string, unknown> | null;
+};
 
-    if (error) throw error;
-
-    return {
-      ...data,
-      resource_type_name: data.categories?.name,
-      created_by_name: data.users?.name,
-      file_count: 0
-    };
-  }
+export const createResource = createAsyncThunk('resources/createResource', async (resourceData: ResourceInput) =>
+  call<Resource>('/api/resources', { method: 'POST', body: JSON.stringify(resourceData) })
 );
 
 export const updateResource = createAsyncThunk(
   'resources/updateResource',
-  async ({ id, updates }: { id: number; updates: Partial<Resource> }) => {
-    const { data, error } = await supabase
-      .from('resources')
-      .update(updates)
-      .eq('id', id)
-      .select(`
-        *,
-        categories!resource_type_id(name),
-        users!created_by(name)
-      `)
-      .single();
-
-    if (error) throw error;
-
-    return {
-      ...data,
-      resource_type_name: data.categories?.name,
-      created_by_name: data.users?.name
-    };
-  }
+  async ({ id, updates }: { id: number; updates: Partial<ResourceInput> }) =>
+    call<Resource>(`/api/resources/${id}`, { method: 'PUT', body: JSON.stringify(updates) })
 );
 
-export const deleteResource = createAsyncThunk(
-  'resources/deleteResource',
-  async (id: number) => {
-    const { error } = await supabase
-      .from('resources')
-      .delete()
-      .eq('id', id);
+export const deleteResource = createAsyncThunk('resources/deleteResource', async (id: number) => {
+  await call(`/api/resources/${id}`, { method: 'DELETE' });
+  return id;
+});
 
-    if (error) throw error;
-    return id;
-  }
-);
+export const fetchResourceFiles = createAsyncThunk('resources/fetchResourceFiles', async (resourceId: number) => ({
+  resourceId,
+  files: await call<ResourceFile[]>(`/api/resources/${resourceId}/files`),
+}));
 
-export const fetchResourceFiles = createAsyncThunk(
-  'resources/fetchResourceFiles',
-  async (resourceId: number) => {
-    const { data, error } = await supabase
-      .from('resource_files')
-      .select(`
-        *,
-        ministries(name),
-        users!uploaded_by(name)
-      `)
-      .eq('resource_id', resourceId)
-      .order('uploaded_at', { ascending: false });
-
-    if (error) throw error;
-
-    return {
-      resourceId,
-      files: data.map(file => ({
-        ...file,
-        ministry_name: file.ministries?.name,
-        uploaded_by_name: file.users?.name
-      }))
-    };
-  }
-);
-
+/** Uploads via the API route, which stores the file in the Supabase Storage bucket "documents". */
 export const uploadFile = createAsyncThunk(
   'resources/uploadFile',
-  async ({
-    resourceId,
-    file,
-    ministryId,
-    displayName
-  }: {
-    resourceId: number;
-    file: File;
-    ministryId?: number;
-    displayName: string;
-  }) => {
-    // Upload file to Supabase Storage
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-    const filePath = `resources/${resourceId}/${fileName}`;
-
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, file);
-
-    if (uploadError) throw uploadError;
-
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('documents')
-      .getPublicUrl(filePath);
-
-    // Create file record in database
-    const { data, error } = await supabase
-      .from('resource_files')
-      .insert([{
-        resource_id: resourceId,
-        name: fileName,
-        display_name: displayName,
-        file_type: file.type,
-        file_url: publicUrl,
-        file_size: file.size,
-        ministry_id: ministryId,
-        uploaded_by: (await supabase.auth.getUser()).data.user?.id
-      }])
-      .select(`
-        *,
-        ministries(name),
-        users!uploaded_by(name)
-      `)
-      .single();
-
-    if (error) throw error;
-
-    return {
-      ...data,
-      ministry_name: data.ministries?.name,
-      uploaded_by_name: data.users?.name
-    };
+  async ({ resourceId, file, ministryId, displayName }: { resourceId: number; file: File; ministryId?: number; displayName: string }) => {
+    const body = new FormData();
+    body.append('file', file);
+    body.append('displayName', displayName);
+    if (ministryId) body.append('ministryId', String(ministryId));
+    return call<ResourceFile>(`/api/resources/${resourceId}/files`, { method: 'POST', body });
   }
 );
 
 export const deleteFile = createAsyncThunk(
   'resources/deleteFile',
-  async (fileId: number) => {
-    // First get file info to delete from storage
-    const { data: file, error: fetchError } = await supabase
-      .from('resource_files')
-      .select('*')
-      .eq('id', fileId)
-      .single();
-
-    if (fetchError) throw fetchError;
-
-    // Delete from storage
-    const { error: storageError } = await supabase.storage
-      .from('documents')
-      .remove([file.file_url]);
-
-    if (storageError) {
-      console.error('Storage deletion error:', storageError);
-      // Continue with database deletion even if storage fails
-    }
-
-    // Delete from database
-    const { error } = await supabase
-      .from('resource_files')
-      .delete()
-      .eq('id', fileId);
-
-    if (error) throw error;
-
-    return { fileId, resourceId: file.resource_id };
+  async ({ resourceId, fileId }: { resourceId: number; fileId: number }) => {
+    await call(`/api/resources/${resourceId}/files?fileId=${fileId}`, { method: 'DELETE' });
+    return { resourceId, fileId };
   }
 );
 
@@ -340,7 +171,7 @@ const resourcesSlice = createSlice({
       .addCase(updateResource.fulfilled, (state, action) => {
         const index = state.resources.findIndex(r => r.id === action.payload.id);
         if (index !== -1) {
-          state.resources[index] = action.payload;
+          state.resources[index] = { ...state.resources[index], ...action.payload };
         }
       })
       // Delete Resource

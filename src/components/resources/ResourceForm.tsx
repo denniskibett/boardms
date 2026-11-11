@@ -1,207 +1,137 @@
-// components/resources/ResourceForm.tsx
-"use client";
+'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, Save, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Btn, Field, FormGrid, SelectInput, SlideOver, TextArea, TextInput } from '@/components/ui/kit';
 import { useResources } from '@/hooks/useResources';
+import type { Resource } from '@/lib/store/slices/resourcesSlice';
+import { typeLabel } from './resourceUtils';
 
-interface ResourceFormProps {
+interface Props {
+  open: boolean;
   onClose: () => void;
-  onSuccess: () => void;
-  editResource?: any;
+  onSaved?: () => void;
+  resource?: Resource | null;
 }
 
-export default function ResourceForm({ onClose, onSuccess, editResource }: ResourceFormProps) {
-  const { categories, createResource, updateResource, loading } = useResources();
-  const [formData, setFormData] = useState({
-    name: '',
-    display_name: '',
-    resource_type_id: '',
-    year: new Date().getFullYear(),
-    description: ''
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+const thisYear = new Date().getFullYear();
+const blank = { display_name: '', name: '', resource_type_id: '', year: String(thisYear), description: '' };
+const toFolder = (s: string) => s.toUpperCase().trim().replace(/\s+/g, '-').replace(/[^A-Z0-9-]/g, '');
+
+/** Create / edit a resource folder in the right-side slide-over. */
+export default function ResourceForm({ open, onClose, onSaved, resource }: Props) {
+  const { categories, createResource, updateResource } = useResources();
+  const [form, setForm] = useState(blank);
+  const [folderTouched, setFolderTouched] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (editResource) {
-      setFormData({
-        name: editResource.name || '',
-        display_name: editResource.display_name || '',
-        resource_type_id: editResource.resource_type_id?.toString() || '',
-        year: editResource.year || new Date().getFullYear(),
-        description: editResource.description || ''
-      });
-    }
-  }, [editResource]);
+    if (!open) return;
+    setErrors({});
+    setFolderTouched(!!resource);
+    setForm(
+      resource
+        ? {
+            display_name: resource.display_name ?? '',
+            name: resource.name ?? '',
+            resource_type_id: resource.resource_type_id ? String(resource.resource_type_id) : '',
+            year: String(resource.year ?? thisYear),
+            description: resource.description ?? '',
+          }
+        : blank,
+    );
+  }, [open, resource]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!formData.name.trim() || !formData.display_name.trim() || !formData.resource_type_id) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const resourceData = {
-        name: formData.name.trim(),
-        display_name: formData.display_name.trim(),
-        resource_type_id: parseInt(formData.resource_type_id),
-        year: formData.year,
-        description: formData.description.trim()
-      };
-
-      let success;
-      if (editResource) {
-        success = await updateResource(editResource.id, resourceData);
-      } else {
-        success = await createResource(resourceData);
-      }
-
-      if (success) {
-        onSuccess();
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const value = e.target.value;
+    setForm((f) => ({
+      ...f,
+      [k]: value,
+      // Suggest the folder name from the display name until the user edits it.
+      ...(k === 'display_name' && !folderTouched ? { name: toFolder(value) } : {}),
+    }));
+    if (k === 'name') setFolderTouched(true);
+    setErrors((er) => ({ ...er, [k]: undefined }));
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const er: Record<string, string> = {};
+    if (!form.display_name.trim()) er.display_name = 'Display name is required';
+    if (!toFolder(form.name)) er.name = 'Folder name is required';
+    if (!form.resource_type_id) er.resource_type_id = 'Choose a resource type';
+    const year = parseInt(form.year, 10);
+    if (!year || year < 1963 || year > thisYear + 5) er.year = 'Enter a valid year';
+    setErrors(er);
+    if (Object.keys(er).length) return;
+
+    setSaving(true);
+    try {
+      const data = {
+        display_name: form.display_name.trim(),
+        name: form.name.trim(),
+        resource_type_id: parseInt(form.resource_type_id, 10),
+        year,
+        description: form.description.trim(),
+      };
+      if (resource) await updateResource(resource.id, data);
+      else await createResource(data);
+      onSaved?.();
+      onClose();
+    } catch (err) {
+      setErrors({ form: (err as Error).message || 'Could not save the resource' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {editResource ? 'Edit Resource' : 'Create New Resource'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Display Name *
-            </label>
-            <input
-              type="text"
-              name="display_name"
-              value={formData.display_name}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="e.g., Cabinet Meeting January 2025"
-              required
+    <SlideOver
+      open={open}
+      onClose={onClose}
+      busy={saving}
+      title={resource ? 'Edit resource' : 'New resource'}
+      description="A resource is a folder of documents, grouped by type and year."
+      footer={
+        <>
+          <Btn variant="outline" onClick={onClose} disabled={saving}>
+            Cancel
+          </Btn>
+          <Btn type="submit" form="resource-form" loading={saving}>
+            {resource ? 'Save changes' : 'Create resource'}
+          </Btn>
+        </>
+      }
+    >
+      <form id="resource-form" onSubmit={submit} className="space-y-5">
+        {errors.form && (
+          <div className="rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-theme-sm text-error-700 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">
+            {errors.form}
+          </div>
+        )}
+        <FormGrid>
+          <Field label="Display name" required error={errors.display_name}>
+            <TextInput value={form.display_name} onChange={set('display_name')} placeholder="e.g. Cabinet Meeting January 2025" />
+          </Field>
+          <Field label="Folder name" required error={errors.name} hint="Saved in upper case with dashes, e.g. CABINET-MEETING-JANUARY-2025.">
+            <TextInput value={form.name} onChange={set('name')} placeholder="CABINET-MEETING-JANUARY-2025" />
+          </Field>
+          <Field label="Resource type" required span={1} error={errors.resource_type_id}>
+            <SelectInput
+              value={form.resource_type_id}
+              onChange={set('resource_type_id')}
+              options={categories.map((c) => ({ value: c.id, label: typeLabel(c.name) }))}
+              placeholder="Select type"
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Folder Name *
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="e.g., CABINET-MEETING-JANUARY-2025"
-              required
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              This will be the folder name in uppercase
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Resource Type *
-            </label>
-            <select
-              name="resource_type_id"
-              value={formData.resource_type_id}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              required
-            >
-              <option value="">Select Resource Type</option>
-              {categories.map(category => (
-                <option key={category.id} value={category.id}>
-                  {category.name.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Year *
-            </label>
-            <input
-              type="number"
-              name="year"
-              value={formData.year}
-              onChange={handleChange}
-              min="2000"
-              max="2030"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Description
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="Optional description for this resource..."
-            />
-          </div>
-
-          {/* Footer */}
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors"
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Save className="w-4 h-4" />
-              )}
-              {isSubmitting ? 'Saving...' : (editResource ? 'Update' : 'Create')}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+          </Field>
+          <Field label="Year" required span={1} error={errors.year}>
+            <TextInput type="number" inputMode="numeric" value={form.year} onChange={set('year')} min={1963} max={thisYear + 5} />
+          </Field>
+          <Field label="Description">
+            <TextArea value={form.description} onChange={set('description')} rows={3} placeholder="Optional" />
+          </Field>
+        </FormGrid>
+      </form>
+    </SlideOver>
   );
 }

@@ -1,40 +1,18 @@
+// GET /api/health — liveness probe. Public, but reveals nothing beyond up/down.
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
+  const started = Date.now();
   try {
-    const startTime = Date.now();
-    
-    // Check database connection
-    const supabase = supabaseServer();
-    const { data, error } = await supabase
-      .from('users')
-      .select('count')
-      .limit(1)
-      .single();
-
-    const responseTime = Date.now() - startTime;
-
-    return NextResponse.json({
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      responseTime,
-      database: {
-        connected: !error,
-        error: error?.message
-      },
-      environment: process.env.NODE_ENV,
-      version: process.env.npm_package_version || '1.0.0'
-    });
-
-  } catch (error) {
+    const { error } = await supabaseServer().from('system_settings').select('id').limit(1);
     return NextResponse.json(
-      {
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
+      { status: error ? 'degraded' : 'healthy', database: !error, responseTime: Date.now() - started, timestamp: new Date().toISOString() },
+      { status: error ? 503 : 200 },
     );
+  } catch {
+    return NextResponse.json({ status: 'error', database: false, timestamp: new Date().toISOString() }, { status: 503 });
   }
 }

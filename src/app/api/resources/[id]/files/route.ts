@@ -1,345 +1,162 @@
-// src/app/api/resources/[id]/files/route.ts - UPDATED FOR SUPABASE STORAGE
+// src/app/api/resources/[id]/files/route.ts — files of a resource, stored in the public Supabase Storage bucket "documents".
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAccess } from '@/lib/auth/permissions';
+import { dbUserId, errorMessage, toInt } from '../../../memos/_lib/helpers';
+import { BUCKET, enrichFiles, removeStoredFiles, storagePathOf } from '../../_lib';
 
-interface RouteParams {
-  params: Promise<{ id: string }>;
-}
+type Ctx = { params: Promise<{ id: string }> };
 
-export async function POST(
-  request: NextRequest,
-  { params }: RouteParams
-) {
+const MAX_BYTES = 50 * 1024 * 1024;
+
+/** POST multipart/form-data { file, displayName?, ministryId? } — upload a file into the resource folder. */
+export async function POST(request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('resources', 'create');
+  if (g.error) return g.error;
+
+  const resourceId = toInt((await params).id);
+  if (!resourceId) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+
   try {
-    const { id } = await params;
-    const resourceId = parseInt(id);
-    
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const ministryId = formData.get('ministryId') as string;
-    const displayName = formData.get('displayName') as string;
+    const file = formData.get('file');
+    const ministryId = toInt(formData.get('ministryId'));
+    const displayName = String(formData.get('displayName') ?? '').trim();
 
-    console.log('📁 Upload request for resource:', {
-      resourceId,
-      fileName: file?.name,
-      fileSize: file?.size,
-      ministryId,
-      displayName
-    });
-
-    if (!file) {
-      return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
-      );
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json({ error: 'File size must be less than 50MB' }, { status: 400 });
     }
 
     const supabase = supabaseServer();
+    const { data: resource } = await supabase.from('resources').select('id, name, year, resource_type_id').eq('id', resourceId).maybeSingle();
+    if (!resource) return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
 
-    // Verify resource exists and get its details
-    const { data: resource, error: resourceError } = await supabase
-      .from('resources')
-      .select(`
-        *,
-        categories(name),
-        users(name)
-      `)
-      .eq('id', resourceId)
-      .single();
+    const [{ data: type }, { data: ministry }] = await Promise.all([
+      resource.resource_type_id
+        ? supabase.from('categories').select('name').eq('id', resource.resource_type_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      ministryId ? supabase.from('ministries').select('name').eq('id', ministryId).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    const typeName = safeSegment(type?.name ?? 'UNCATEGORIZED');
 
-    if (resourceError || !resource) {
-      console.error('❌ Resource not found:', resourceError);
-      return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
-    }
-
-    // Get ministry name if ministryId provided
-    let ministryName = null;
-    if (ministryId) {
-      const { data: ministry } = await supabase
-        .from('ministries')
-        .select('name')
-        .eq('id', parseInt(ministryId))
-        .single();
-      ministryName = ministry?.name;
-    }
-
-    // Generate unique filename
-    const fileExt = file.name.split('.').pop();
-    const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-    
-    // Create folder structure in Supabase Storage
-    const folderPath = `resources/${resource.categories.name}/${resource.year}/${resource.name}`;
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const uniqueFileName = `${Date.now()}-${Math.random().toString(36).slice(2, 12)}.${ext}`;
+    const folderPath = `resources/${typeName}/${resource.year}/${safeSegment(resource.name)}`;
     const filePath = `${folderPath}/${uniqueFileName}`;
 
-    console.log('💾 Uploading to Supabase Storage:', {
-      folderPath,
-      filePath,
-      fileSize: file.size
-    });
-
-    // Upload file to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, file);
-
+    const { error: uploadError } = await supabase.storage
+      .from(BUCKET)
+      .upload(filePath, Buffer.from(await file.arrayBuffer()), { contentType: file.type || undefined, upsert: false });
     if (uploadError) {
-      console.error('❌ Supabase storage upload error:', uploadError);
-      return NextResponse.json(
-        { error: 'Failed to upload file to storage: ' + uploadError.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to upload file to storage: ' + uploadError.message }, { status: 500 });
     }
 
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('documents')
-      .getPublicUrl(filePath);
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
 
-    // Generate display filename
-    const fileName = generateResourceFileName(
-      file.name, 
-      ministryName, 
-      resource.year,
-      resource.categories.name
-    );
-
-    // Save file record to database
-    const { data: savedFile, error: dbError } = await supabase
+    const { data: saved, error: dbError } = await supabase
       .from('resource_files')
-      .insert([{
+      .insert({
         resource_id: resourceId,
-        name: fileName,
+        name: standardFileName(file.name, ministry?.name ?? null),
         display_name: displayName || file.name,
-        file_type: getFileType(fileExt),
+        file_type: fileType(ext),
         file_url: publicUrl,
         file_size: file.size,
-        ministry_id: ministryId ? parseInt(ministryId) : null,
-        uploaded_by: session.user.id,
+        ministry_id: ministryId,
+        uploaded_by: await dbUserId(g.user),
         metadata: {
           originalName: file.name,
           uploadedAt: new Date().toISOString(),
           mimeType: file.type,
-          ministryName: ministryName,
-          resourceType: resource.categories.name,
+          ministryName: ministry?.name ?? null,
+          resourceType: type?.name ?? null,
           year: resource.year,
           resourceName: resource.name,
           folderStructure: folderPath,
-          uniqueFileName: uniqueFileName,
-          storagePath: filePath
-        }
-      }])
-      .select(`
-        *,
-        ministries(name),
-        users(name)
-      `)
+          uniqueFileName,
+          storagePath: filePath,
+        },
+      })
+      .select()
       .single();
 
     if (dbError) {
-      console.error('❌ Database error saving file record:', dbError);
-      
-      // Try to delete the uploaded file from storage if database save fails
-      await supabase.storage
-        .from('documents')
-        .remove([filePath]);
-      
-      return NextResponse.json(
-        { error: 'Failed to save file record: ' + dbError.message },
-        { status: 500 }
-      );
+      await removeStoredFiles([filePath]);
+      return NextResponse.json({ error: 'Failed to save file record: ' + dbError.message }, { status: 500 });
     }
 
-    console.log('✅ File uploaded successfully:', {
-      id: savedFile.id,
-      name: savedFile.name,
-      url: savedFile.file_url,
-      folder: folderPath
-    });
-
-    const formattedFile = {
-      ...savedFile,
-      ministry_name: savedFile.ministries?.name,
-      uploaded_by_name: savedFile.users?.name
-    };
-
-    return NextResponse.json(formattedFile);
-
-  } catch (error: any) {
-    console.error('❌ Error uploading resource file:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload resource file: ' + error.message },
-      { status: 500 }
-    );
+    const [formatted] = await enrichFiles([saved]);
+    return NextResponse.json(formatted, { status: 201 });
+  } catch (error) {
+    console.error('Error uploading resource file:', error);
+    return NextResponse.json({ error: 'Failed to upload resource file: ' + errorMessage(error) }, { status: 500 });
   }
 }
 
-export async function GET(
-  request: Request,
-  { params }: RouteParams
-) {
-  try {
-    const { id } = await params;
-    const resourceId = parseInt(id);
-    
-    const supabase = supabaseServer();
+/** GET — list the resource's files. */
+export async function GET(_request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('resources', 'view');
+  if (g.error) return g.error;
 
-    // Verify resource exists
-    const { data: resource, error: resourceError } = await supabase
-      .from('resources')
-      .select('id, name')
-      .eq('id', resourceId)
-      .single();
+  const resourceId = toInt((await params).id);
+  if (!resourceId) return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
 
-    if (resourceError || !resource) {
-      return NextResponse.json({ error: 'Resource not found' }, { status: 404 });
-    }
-
-    // Get files for this resource
-    const { data: files, error } = await supabase
-      .from('resource_files')
-      .select(`
-        *,
-        ministries(name),
-        users(name)
-      `)
-      .eq('resource_id', resourceId)
-      .order('uploaded_at', { ascending: false });
-
-    if (error) {
-      console.error('❌ Error fetching files:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch files: ' + error.message },
-        { status: 500 }
-      );
-    }
-
-    console.log(`✅ Found ${files?.length || 0} files for resource ${resourceId}`);
-    
-    const formattedFiles = files?.map(file => ({
-      ...file,
-      ministry_name: file.ministries?.name,
-      uploaded_by_name: file.users?.name
-    })) || [];
-
-    return NextResponse.json(formattedFiles);
-  } catch (error: any) {
-    console.error('❌ Error fetching resource files:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch resource files: ' + error.message },
-      { status: 500 }
-    );
-  }
+  const { data, error } = await supabaseServer()
+    .from('resource_files')
+    .select('*')
+    .eq('resource_id', resourceId)
+    .order('uploaded_at', { ascending: false });
+  if (error) return NextResponse.json({ error: 'Failed to fetch files: ' + error.message }, { status: 500 });
+  return NextResponse.json(await enrichFiles(data ?? []));
 }
 
-// DELETE /api/resources/[id]/files - Delete a file
-export async function DELETE(
-  request: NextRequest,
-  { params }: RouteParams
-) {
-  try {
-    const { id } = await params;
-    const resourceId = parseInt(id);
-    const { searchParams } = new URL(request.url);
-    const fileId = searchParams.get('fileId');
+/** DELETE ?fileId=… — remove one file (storage object + record). */
+export async function DELETE(request: NextRequest, { params }: Ctx) {
+  const g = await requireAccess('resources', 'delete');
+  if (g.error) return g.error;
 
-    if (!fileId) {
-      return NextResponse.json(
-        { error: 'File ID is required' },
-        { status: 400 }
-      );
-    }
+  const resourceId = toInt((await params).id);
+  const fileId = toInt(new URL(request.url).searchParams.get('fileId'));
+  if (!resourceId || !fileId) return NextResponse.json({ error: 'Resource id and fileId are required' }, { status: 400 });
 
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const supabase = supabaseServer();
+  const { data: existing } = await supabase
+    .from('resource_files')
+    .select('id, file_url, metadata')
+    .eq('id', fileId)
+    .eq('resource_id', resourceId)
+    .maybeSingle();
+  if (!existing) return NextResponse.json({ error: 'File not found' }, { status: 404 });
 
-    const supabase = supabaseServer();
+  await removeStoredFiles([storagePathOf(existing)]);
 
-    // Verify file exists and belongs to this resource
-    const { data: existingFile, error: fetchError } = await supabase
-      .from('resource_files')
-      .select('*')
-      .eq('id', parseInt(fileId))
-      .eq('resource_id', resourceId)
-      .single();
-
-    if (fetchError || !existingFile) {
-      return NextResponse.json({ error: 'File not found' }, { status: 404 });
-    }
-
-    // Delete file from Supabase Storage
-    if (existingFile.metadata?.storagePath) {
-      const { error: storageError } = await supabase.storage
-        .from('documents')
-        .remove([existingFile.metadata.storagePath]);
-
-      if (storageError) {
-        console.error('❌ Error deleting file from storage:', storageError);
-        // Continue with database deletion even if storage deletion fails
-      }
-    }
-
-    // Delete file record from database
-    const { error: deleteError } = await supabase
-      .from('resource_files')
-      .delete()
-      .eq('id', parseInt(fileId))
-      .eq('resource_id', resourceId);
-
-    if (deleteError) {
-      console.error('❌ Error deleting file record:', deleteError);
-      return NextResponse.json(
-        { error: 'Failed to delete file record: ' + deleteError.message },
-        { status: 500 }
-      );
-    }
-
-    console.log('🗑️ File deleted successfully:', fileId);
-    return NextResponse.json({ success: true, deletedFileId: fileId });
-
-  } catch (error: any) {
-    console.error('❌ Error deleting file:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete file: ' + error.message },
-      { status: 500 }
-    );
-  }
+  const { error } = await supabase.from('resource_files').delete().eq('id', fileId).eq('resource_id', resourceId);
+  if (error) return NextResponse.json({ error: 'Failed to delete file record: ' + error.message }, { status: 500 });
+  return NextResponse.json({ success: true, deletedFileId: fileId, resourceId });
 }
 
-// Helper function to generate standardized filenames
-function generateResourceFileName(
-  originalName: string, 
-  ministryName: string | null, 
-  year: number,
-  resourceType: string
-): string {
-  const extension = originalName.split('.').pop();
-  const baseName = originalName.replace(`.${extension}`, '');
-  
-  let fileName = baseName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-  
-  if (ministryName) {
-    const ministryPart = ministryName.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-    fileName = `${ministryPart}_${fileName}`;
-  }
-  
-  return `${fileName}.${extension}`;
+function safeSegment(s: string) {
+  return s.trim().replace(/[^A-Za-z0-9_-]+/g, '_') || 'UNNAMED';
 }
 
-function getFileType(extension: string | undefined): string {
-  const typeMap: { [key: string]: string } = {
-    'pdf': 'pdf', 'doc': 'word', 'docx': 'word', 'ppt': 'powerpoint', 
-    'pptx': 'powerpoint', 'xls': 'excel', 'xlsx': 'excel', 'txt': 'text',
-    'jpg': 'image', 'jpeg': 'image', 'png': 'image', 'gif': 'image',
-    'zip': 'archive', 'rar': 'archive', '7z': 'archive'
+/** "Budget memo.pdf" + "Ministry of X" → "MINISTRY_OF_X_BUDGET_MEMO.pdf" */
+function standardFileName(originalName: string, ministryName: string | null) {
+  const dot = originalName.lastIndexOf('.');
+  const ext = dot > 0 ? originalName.slice(dot + 1) : '';
+  const base = (dot > 0 ? originalName.slice(0, dot) : originalName).toUpperCase().replace(/[^A-Z0-9]/g, '_');
+  const prefix = ministryName ? `${ministryName.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_` : '';
+  return ext ? `${prefix}${base}.${ext}` : `${prefix}${base}`;
+}
+
+function fileType(ext: string): string {
+  const map: Record<string, string> = {
+    pdf: 'pdf', doc: 'word', docx: 'word', ppt: 'powerpoint', pptx: 'powerpoint', xls: 'excel', xlsx: 'excel',
+    txt: 'text', jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', zip: 'archive', rar: 'archive', '7z': 'archive',
   };
-  return typeMap[extension?.toLowerCase() || ''] || 'other';
+  return map[ext] || 'other';
 }

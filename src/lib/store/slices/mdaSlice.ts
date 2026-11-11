@@ -1,6 +1,11 @@
-// src/lib/store/slices/mdasSlice.ts
+// src/lib/store/slices/mdaSlice.ts
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { MDAEntity, MDAType, Pagination, HierarchicalData } from '@/types/mda';
+
+// Local copies of the MDA types (the old '@/types/mda' import did not resolve under src/).
+type MDAType = 'ministry' | 'department' | 'agency';
+type MDAEntity = { id: number; name: string; [key: string]: unknown };
+interface Pagination { page: number; limit: number; total: number; totalPages: number }
+interface HierarchicalData { ministries: (MDAEntity & { state_departments?: (MDAEntity & { agencies?: MDAEntity[] })[] })[]; totalAgencies: number; totalDepartments: number }
 
 interface UseMDAsParams {
   type?: MDAType;
@@ -18,7 +23,7 @@ interface MDAsState {
   entitiesFilters: UseMDAsParams;
   
   // Single MDA state (for useMDA hook)
-  currentMDA: any | null;
+  currentMDA: MDAEntity | null;
   currentMDALoading: boolean;
   currentMDAError: string | null;
   
@@ -85,8 +90,8 @@ export const fetchMDAs = createAsyncThunk(
       }
 
       return result;
-    } catch (error: any) {
-      return rejectWithValue(error.message);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : String(error));
     }
   }
 );
@@ -105,8 +110,8 @@ export const fetchMDA = createAsyncThunk(
       }
 
       return result.data;
-    } catch (error: any) {
-      return rejectWithValue(error.message);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : String(error));
     }
   }
 );
@@ -128,8 +133,8 @@ export const fetchHierarchicalMDAs = createAsyncThunk(
       }
 
       return result.data || { ministries: [], totalAgencies: 0, totalDepartments: 0 };
-    } catch (error: any) {
-      return rejectWithValue(error.message);
+    } catch (error) {
+      return rejectWithValue(error instanceof Error ? error.message : String(error));
     }
   }
 );

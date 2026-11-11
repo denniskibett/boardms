@@ -1,192 +1,198 @@
-// app/components/meetings/MeetingMinutesDetail.tsx
+// src/components/meetings/MeetingMinutesDetail.tsx
+// Minutes view for a held meeting: details, participants, agenda items and the decisions recorded on them.
 "use client";
-import React from "react";
-import { useRouter } from "next/navigation";
+
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, FileText, Loader2 } from "lucide-react";
+import { Card, DetailList, PageHeader, StatusBadge, toneForStatus } from "@/components/ui/kit";
+import { usePermissions } from "@/hooks/usePermissions";
 
 interface MeetingMinutesDetailProps {
+  /** The meeting id. */
   minuteId: string;
 }
 
-export default function MeetingMinutesDetail({ minuteId }: MeetingMinutesDetailProps) {
-  const router = useRouter();
-  
-  // Mock data - in real app, fetch by minuteId
-  const minute = {
-    id: minuteId,
-    meetingTitle: "Infrastructure Committee Meeting",
-    committee: "Infrastructure & Energy",
-    date: "2024-01-11",
-    status: "approved",
-    attendees: [
-      "H.E. Rigathi Gachagua (Chair)",
-      "Hon. Kipchumba Murkomen",
-      "Hon. Davis Chirchir", 
-      "Hon. Njuguna Ndung'u",
-      "Hon. Musalia Mudavadi"
-    ],
-    decisions: [
-      {
-        id: "1",
-        title: "Infrastructure Development Proposal",
-        decision: "APPROVED",
-        decisionDetails: "Approved with modifications to implementation timeline",
-        actionItems: [
-          "Ministry of Transport to commence implementation by Feb 1st",
-          "Treasury to release first tranche of funds by Jan 20th"
-        ]
-      },
-      {
-        id: "2",
-        title: "Energy Sector Reforms",
-        decision: "APPROVED",
-        decisionDetails: "Approved the proposed energy sector reforms",
-        actionItems: [
-          "Ministry of Energy to draft implementation framework",
-          "Public consultation to be completed by March 31st"
-        ]
-      }
-    ],
-    nextMeeting: "2024-02-15",
-    preparedBy: "Cabinet Secretariat",
-    documents: [
-      "meeting-minutes.pdf",
-      "attendance-sheet.docx",
-      "presentation-slides.pptx"
-    ]
-  };
+interface Decision {
+  id: number | string;
+  agenda_id?: number | string | null;
+  title?: string | null;
+  name?: string | null;
+  decision?: string | null;
+  description?: string | null;
+  status?: string | null;
+  meeting_id?: number | string | null;
+}
 
-  const generateActionLetters = () => {
-    alert("Action letters generated for all approved decisions!");
-  };
+const parse = (v?: string) => (v ? new Date(v.includes("T") ? v : v.replace(" ", "T")) : null);
+
+export default function MeetingMinutesDetail({ minuteId }: MeetingMinutesDetailProps) {
+  const { can, loading: permsLoading } = usePermissions();
+  const [meeting, setMeeting] = useState<any>(null);
+  const [decisions, setDecisions] = useState<Decision[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const canSeeDecisions = can("decisions", "view");
+
+  useEffect(() => {
+    if (permsLoading) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/meetings/${minuteId}`);
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error || "Failed to load meeting");
+        if (alive) setMeeting(data);
+        if (canSeeDecisions) {
+          const dr = await fetch("/api/decisions");
+          const all = dr.ok ? await dr.json().catch(() => []) : [];
+          if (alive)
+            setDecisions((Array.isArray(all) ? all : []).filter((d: Decision) => String(d.meeting_id) === String(minuteId)));
+        }
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : "Failed to load minutes");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [minuteId, permsLoading, canSeeDecisions]);
+
+  const back = (
+    <Link
+      href="/meetings/minutes"
+      className="inline-flex items-center gap-1.5 text-theme-sm text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white"
+    >
+      <ArrowLeft className="h-4 w-4" />
+      All minutes
+    </Link>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center text-theme-sm text-gray-500">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-brand-500" />
+        Loading minutes…
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="space-y-4">
+        {back}
+        <Card>
+          <p className="text-theme-sm text-error-500">{error || "Meeting not found"}</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const start = parse(meeting.start_at);
+  const agenda: any[] = meeting.agenda || [];
+  const participants: any[] = meeting.participants || [];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <button 
-            onClick={() => router.back()}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 mb-4"
+      {back}
+      <PageHeader
+        title={meeting.name}
+        description={`${meeting.type} · ${start ? start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""}`}
+        actions={
+          <Link
+            href={`/meetings/${meeting.id}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
           >
-            ← Back to Minutes List
-          </button>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {minute.meetingTitle}
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            {minute.committee} • {new Date(minute.date).toLocaleDateString()}
-          </p>
-        </div>
-        <button 
-          onClick={generateActionLetters}
-          className="rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600"
-        >
-          Generate Action Letters
-        </button>
-      </div>
+            Open meeting
+          </Link>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Meeting Details */}
-        <div className="lg:col-span-1">
-          <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-            <div className="border-b border-gray-200 p-6 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Meeting Details
-              </h2>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</h3>
-                  <p className="text-sm text-gray-900 dark:text-white">{new Date(minute.date).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Prepared By</h3>
-                  <p className="text-sm text-gray-900 dark:text-white">{minute.preparedBy}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Next Meeting</h3>
-                  <p className="text-sm text-gray-900 dark:text-white">{new Date(minute.nextMeeting).toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</h3>
-                  <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
-                    {minute.status.charAt(0).toUpperCase() + minute.status.slice(1)}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="mt-6">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Attendees</h3>
-                <div className="space-y-2">
-                  {minute.attendees.map((attendee, index) => (
-                    <div key={index} className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                      <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                      {attendee}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {minute.documents.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Documents</h3>
-                  <div className="space-y-2">
-                    {minute.documents.map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">{doc}</span>
-                        <button className="text-brand-500 hover:text-brand-600">Download</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+        <div className="space-y-6 lg:col-span-1">
+          <Card title="Meeting details">
+            <DetailList
+              items={[
+                { label: "Status", value: <StatusBadge tone={toneForStatus(meeting.status)}>{meeting.status}</StatusBadge> },
+                { label: "Time", value: start?.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) },
+                { label: "Location", value: meeting.location },
+                { label: "Chair", value: meeting.chair_name },
+                { label: "Approved by", value: meeting.approved_by_name },
+              ]}
+            />
+          </Card>
+          <Card title={`Participants (${participants.length})`}>
+            {participants.length === 0 ? (
+              <p className="text-theme-sm text-gray-500 dark:text-gray-400">No participants recorded.</p>
+            ) : (
+              <ul className="space-y-2">
+                {participants.map((p) => (
+                  <li key={p.auth_id || p.id} className="text-theme-sm">
+                    <span className="text-gray-800 dark:text-white/90">{p.name}</span>
+                    {p.role && <span className="text-gray-500 dark:text-gray-400"> · {p.role}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
 
-        {/* Decisions & Action Items */}
         <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
-            <div className="border-b border-gray-200 p-6 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Decisions & Action Items
-              </h2>
-            </div>
-            <div className="p-6">
-              <div className="space-y-6">
-                {minute.decisions.map((decision) => (
-                  <div key={decision.id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0 dark:border-gray-700">
-                    <div className="flex items-start justify-between mb-3">
-                      <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                        {decision.title}
-                      </h3>
-                      <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
-                        {decision.decision}
-                      </span>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                      {decision.decisionDetails}
-                    </p>
-                    
-                    <div>
-                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Action Items:
-                      </h4>
-                      <ul className="space-y-2">
-                        {decision.actionItems.map((action, index) => (
-                          <li key={index} className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400">
-                            <span className="mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-gray-400"></span>
-                            {action}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <Card title={`Agenda and decisions (${agenda.length})`}>
+            {agenda.length === 0 ? (
+              <p className="text-theme-sm text-gray-500 dark:text-gray-400">No agenda items were recorded for this meeting.</p>
+            ) : (
+              <ol className="divide-y divide-gray-100 dark:divide-gray-800">
+                {agenda.map((item, i) => {
+                  const itemDecisions = decisions.filter((d) => String(d.agenda_id) === String(item.id));
+                  return (
+                    <li key={item.id} className="py-4 first:pt-0 last:pb-0">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <h4 className="font-medium text-gray-800 dark:text-white/90">
+                          {i + 1}. {item.name}
+                        </h4>
+                        <StatusBadge tone={toneForStatus(item.status)}>{item.status}</StatusBadge>
+                      </div>
+                      {item.ministry?.name && (
+                        <p className="mt-0.5 text-theme-xs text-gray-500 dark:text-gray-400">{item.ministry.name}</p>
+                      )}
+                      {item.description && (
+                        <p className="mt-2 text-theme-sm text-gray-600 dark:text-gray-400">{item.description}</p>
+                      )}
+                      {item.documents?.length > 0 && (
+                        <p className="mt-2 inline-flex items-center gap-1.5 text-theme-xs text-gray-500 dark:text-gray-400">
+                          <FileText className="h-3.5 w-3.5" />
+                          {item.documents.length} document{item.documents.length === 1 ? "" : "s"}
+                        </p>
+                      )}
+                      {itemDecisions.length > 0 && (
+                        <ul className="mt-3 space-y-2">
+                          {itemDecisions.map((d) => (
+                            <li
+                              key={d.id}
+                              className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-theme-sm dark:border-gray-800 dark:bg-gray-900"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-medium text-gray-800 dark:text-white/90">
+                                  {d.title || d.name || d.decision || "Decision"}
+                                </span>
+                                {d.status && <StatusBadge tone={toneForStatus(d.status)}>{d.status}</StatusBadge>}
+                              </div>
+                              {d.description && <p className="mt-1 text-gray-600 dark:text-gray-400">{d.description}</p>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </Card>
         </div>
       </div>
     </div>

@@ -103,8 +103,8 @@ export function useOpenBook(meetingId?: string) {
       status: agenda.status,
       ministry_name: agenda.ministry?.name,
       presenter: agenda.presenter?.name,
-      presenter_id: agenda.presenter_id,
-      ministry_id: agenda.ministry_id,
+      presenter_id: agenda.presenter_id ?? undefined,
+      ministry_id: agenda.ministry_id ?? undefined,
       cabinet_approval_required: agenda.cabinet_approval_required,
       documents: agenda.documents || []
     })).sort((a, b) => a.order - b.order);

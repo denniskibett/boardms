@@ -1,9 +1,6 @@
-import OpenBook from '@/components/agenda/OpenBook';
+import { redirect } from 'next/navigation';
 
+// The old Open Book page had no meeting attached; books now live under /books.
 export default function OpenBookPage() {
-  return (
-    <div className="h-screen"> {/* Ensure full height */}
-      <OpenBook meetingId="current-meeting" />
-    </div>
-  );
+  redirect('/books');
 }

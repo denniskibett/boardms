@@ -35,12 +35,12 @@ export default function AdminLayout({
   }, []);
 
   useEffect(() => {
-    if (status === "loading" || settingsLoading) return;
+    if (status === "loading") return;
     
     if (!session) {
       router.push("/auth/signin");
     }
-  }, [session, status, router, settingsLoading]);
+  }, [session, status, router]);
 
   // Set CSS variables for dynamic theming
   useEffect(() => {
@@ -98,11 +98,11 @@ export default function AdminLayout({
   // Handle hydration mismatch by not rendering dynamic content until mounted
   const systemDescription = mounted ? getSystemDescription() : '';
   const primaryColor = mounted ? getPrimaryColor() : '#3b82f6'; // Fallback color
-  const systemName = mounted ? getSystemName() : 'Loading...';
+  const systemName = mounted ? getSystemName() : '';
   const timezone = mounted ? getTimezone() : '';
 
-  // Show loading state while checking session or settings
-  if (status === "loading" || settingsLoading) {
+  // Only the session check blocks the page; settings (colours, logo) fill in when they arrive.
+  if (status === "loading") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
@@ -111,7 +111,7 @@ export default function AdminLayout({
             style={{ borderBottomColor: primaryColor }}
           ></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Loading {systemName}...
+            {systemName ? `Loading ${systemName}…` : 'Loading…'}
           </p>
           {systemDescription && mounted && (
             <p className="mt-2 text-sm text-gray-500 dark:text-gray-500">
@@ -142,40 +142,15 @@ export default function AdminLayout({
       
       {/* Main Content Area */}
       <div
-        className={`flex-1 transition-all duration-300 ease-in-out ${mainContentMargin}`}
+        className={`min-w-0 flex-1 transition-all duration-300 ease-in-out ${mainContentMargin}`}
       >
         <AppHeader />
         
         {/* Page Content */}
-        <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
+        <div className="w-full p-4 md:p-6 2xl:px-8">
           {children}
         </div>
       </div>
-
-      {/* Floating Action Button with dynamic colors - only show when mounted */}
-      {mounted && (
-        <button
-          className="fixed bottom-6 right-6 z-40 p-3 rounded-full shadow-lg text-white hidden lg:flex items-center justify-center transition-transform hover:scale-110"
-          style={{ 
-            backgroundColor: primaryColor,
-            boxShadow: `0 10px 15px -3px ${primaryColor}40`
-          }}
-          onClick={() => {
-            // Quick action - could open create modal
-            console.log('Quick action clicked');
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = getSecondaryColor();
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = primaryColor;
-          }}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-        </button>
-      )}
 
       {/* Optional: System info footer - only show when mounted to prevent hydration mismatch */}
       {mounted && process.env.NODE_ENV === 'development' && (

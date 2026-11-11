@@ -1,214 +1,136 @@
 // src/components/agenda/OpenBook.tsx
 'use client';
-
-import React, { useState, useEffect } from 'react';
+/**
+ * Open Book for one meeting: agenda editor beside the meeting book (cover + all documents as one).
+ * Desktop: agenda column + book. Mobile: "Agenda" / "Book" tabs.
+ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { useOpenBook } from '@/hooks/useOpenBook';
-import BookViewer from '@/components/agenda/BookViewer';
+import { usePermissions } from '@/hooks/usePermissions';
 import AgendaManager from '@/components/agenda/AgendaManager';
 import AgendaSlideOver from '@/components/agenda/AgendaSlideOver';
-import AnnotationToolbar from '@/components/agenda/AnnotationToolbar';
-import { Loader2 } from 'lucide-react'; // Add this import
+import MeetingBook from '@/components/books/MeetingBook';
+import { Btn, Card } from '@/components/ui/kit';
 
 interface OpenBookProps {
   meetingId?: string;
 }
 
 export default function OpenBook({ meetingId }: OpenBookProps) {
+  const { can } = usePermissions();
   const [currentPage, setCurrentPage] = useState(0);
-  const [isAnnotating, setIsAnnotating] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [selectedAgenda, setSelectedAgenda] = useState<any>(null);
-  const [showAgendaDetails, setShowAgendaDetails] = useState(false);
-  
-  const {
-    documents,
-    agendas,
-    addAgenda,
-    updateAgenda,
-    deleteAgenda,
-    loading
-  } = useOpenBook(meetingId);
+  const [selectedAgenda, setSelectedAgenda] = useState<unknown>(null);
+  const [tab, setTab] = useState<'agenda' | 'book'>('book');
+  const [bookKey, setBookKey] = useState(0);
+  const [fullscreen, setFullscreen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
-  // Handle agenda item click to navigate to document
-  const handleAgendaItemClick = (documentIndex: number) => {
-    console.log('🔗 Agenda navigation clicked - Document index:', documentIndex);
-    console.log('📄 Total documents:', documents.length);
-    
-    if (documentIndex >= 0 && documentIndex < documents.length) {
-      console.log('✅ Setting current page to:', documentIndex);
-      setCurrentPage(documentIndex);
-    } else {
-      console.error('❌ Invalid document index:', documentIndex);
-    }
+  const { documents, agendas, addAgenda, updateAgenda, deleteAgenda, loading } = useOpenBook(meetingId);
+
+  // Reload the book whenever the agenda or its documents change.
+  const signature = JSON.stringify(agendas.map((a) => [a.id, a.order, a.title, a.documents?.length ?? 0]));
+  useEffect(() => setBookKey((k) => k + 1), [signature]);
+
+  const scrollToItem = useCallback((agendaId?: number | string) => {
+    if (agendaId == null) return;
+    setTab('book');
+    requestAnimationFrame(() =>
+      document.getElementById(`book-item-${agendaId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    );
+  }, []);
+
+  const onAgendaItemClick = (documentIndex: number) => {
+    setCurrentPage(documentIndex);
+    scrollToItem(documents[documentIndex]?.agenda_id);
   };
 
-  // Handle agenda details slideover
-  const handleShowAgendaDetails = (agenda: any) => {
-    console.log('📋 Opening agenda details for:', agenda);
-    setSelectedAgenda(agenda);
-    setShowAgendaDetails(true);
-  };
+  const onReorderAgendas = (reordered: { id: string }[]) =>
+    reordered.forEach((a, i) => updateAgenda(a.id, { order: i + 1 }));
 
-  // Handle agenda save from slideover
-  const handleAgendaSave = (savedAgenda: any) => {
-    console.log('💾 Agenda saved:', savedAgenda);
-    // The agenda will be automatically refreshed via the useOpenBook hook
-    setShowAgendaDetails(false);
-    setSelectedAgenda(null);
-  };
-
-  // Handle agenda reordering
-  const handleReorderAgendas = (reorderedAgendas: any[]) => {
-    reorderedAgendas.forEach((agenda, index) => {
-      updateAgenda(agenda.id, { order: index + 1 });
-    });
-  };
+  useEffect(() => {
+    const onChange = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
+    if (document.fullscreenElement) document.exitFullscreen();
+    else rootRef.current?.requestFullscreen?.();
   };
 
-  // Handle ESC key to exit fullscreen
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isFullscreen) {
-        setIsFullscreen(false);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isFullscreen]);
-
-  // Prevent body scroll when in fullscreen
-  useEffect(() => {
-    if (isFullscreen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isFullscreen]);
-
-  if (loading) {
+  if (!meetingId || !/^\d+$/.test(String(meetingId))) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
-      </div>
+      <Card>
+        <p className="text-sm text-gray-500">Choose a meeting to open its book.</p>
+      </Card>
     );
   }
 
+  if (loading) return <div className="h-96 animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800" />;
+
+  const canEditAgenda = can('agenda', 'edit') || can('agenda', 'create');
+
   return (
-    <>
-      {isFullscreen && (
-        <button
-          onClick={toggleFullscreen}
-          className="fixed top-4 right-4 z-50 p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-lg"
-          title="Exit Fullscreen (ESC)"
-        >
-          ✕ Exit Fullscreen
-        </button>
-      )}
-
-      {/* Agenda SlideOver */}
-      {showAgendaDetails && (
-        <AgendaSlideOver
-          agenda={selectedAgenda}
-          isOpen={showAgendaDetails}
-          onClose={() => {
-            setShowAgendaDetails(false);
-            setSelectedAgenda(null);
-          }}
-          onSave={handleAgendaSave}
-        />
-      )}
-
-      <div
-  className={`
-    ${isFullscreen ? 'fixed inset-0 z-40' : 'h-screen'} 
-    flex flex-col 
-    bg-white dark:bg-gray-900 
-    rounded-2xl 
-    shadow-lg dark:shadow-black/20
-    overflow-hidden
-    transition-all duration-300
-  `}
->
-
-        {/* Header */}
-        <div className="flex-shrink-0 bg-white border-b">
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-semibold text-gray-800">Open Book</h1>
-              {/* <DocumentUpload onUpload={uploadDocument} /> */}
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <AnnotationToolbar
-                isAnnotating={isAnnotating}
-                onToggleAnnotating={() => setIsAnnotating(!isAnnotating)}
-              />
-              
-              {!isFullscreen && (
-                <button
-                  onClick={toggleFullscreen}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-                >
-                  <span>⛶</span>
-                  <span>Fullscreen</span>
-                </button>
-              )}
-              
-              {isFullscreen && (
-                <button
-                  onClick={toggleFullscreen}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
-                >
-                  <span>✕</span>
-                  <span>Exit Fullscreen</span>
-                </button>
-              )}
-            </div>
+    <div ref={rootRef} className={fullscreen ? 'h-full overflow-y-auto bg-gray-50 p-4 dark:bg-gray-900' : ''}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {canEditAgenda ? (
+          <div className="inline-flex rounded-lg bg-gray-100 p-0.5 lg:hidden dark:bg-gray-800">
+            {(['book', 'agenda'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`rounded-md px-3 py-1.5 text-theme-sm font-medium ${
+                  tab === t ? 'bg-white text-gray-900 shadow-theme-xs dark:bg-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
+                }`}
+              >
+                {t === 'book' ? 'Book' : 'Agenda'}
+              </button>
+            ))}
           </div>
-        </div>
+        ) : (
+          <span />
+        )}
+        <Btn variant="outline" size="sm" onClick={toggleFullscreen}>
+          {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          {fullscreen ? 'Exit full screen' : 'Full screen'}
+        </Btn>
+      </div>
 
-        {/* Main Content */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Agenda Panel */}
-          <div className="w-96 bg-white border-r flex flex-col">
-            <div className="flex-1 overflow-y-auto">
+      <div className={`grid gap-6 ${canEditAgenda ? 'lg:grid-cols-[320px_minmax(0,1fr)]' : ''}`}>
+        {canEditAgenda && (
+          <aside className={`${tab === 'agenda' ? 'block' : 'hidden'} lg:block`}>
+            <div className="lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
               <AgendaManager
-                agendas={agendas}
-                documents={documents}
+                agendas={agendas as React.ComponentProps<typeof AgendaManager>['agendas']}
+                documents={documents as React.ComponentProps<typeof AgendaManager>['documents']}
                 onAddAgenda={addAgenda}
                 onUpdateAgenda={updateAgenda}
                 onDeleteAgenda={deleteAgenda}
-                onReorderAgendas={handleReorderAgendas}
+                onReorderAgendas={onReorderAgendas}
                 currentPage={currentPage}
                 onPageChange={setCurrentPage}
-                onAgendaItemClick={handleAgendaItemClick}
-                onShowAgendaDetails={handleShowAgendaDetails}
+                onAgendaItemClick={onAgendaItemClick}
+                onShowAgendaDetails={(agenda: unknown) => setSelectedAgenda(agenda)}
               />
             </div>
-          </div>
+          </aside>
+        )}
 
-          {/* Book Viewer */}
-          <div className="flex-1 bg-gray-100 min-w-0 overflow-hidden">
-            <BookViewer
-              documents={documents}
-              currentPage={currentPage}
-              onPageChange={setCurrentPage}
-              isFullscreen={isFullscreen}
-              onAgendaItemClick={handleAgendaItemClick}
-            />
-          </div>
+        <div className={`${canEditAgenda && tab !== 'book' ? 'hidden' : 'block'} min-w-0 lg:block`}>
+          <MeetingBook key={bookKey} meetingId={meetingId} embedded={canEditAgenda} />
         </div>
       </div>
-    </>
+
+      {!!selectedAgenda && (
+        <AgendaSlideOver
+          agenda={selectedAgenda}
+          isOpen={!!selectedAgenda}
+          onClose={() => setSelectedAgenda(null)}
+          onSave={() => setSelectedAgenda(null)}
+        />
+      )}
+    </div>
   );
 }
